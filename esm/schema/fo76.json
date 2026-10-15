@@ -87107,48 +87107,59 @@
                       "sig": "NAM5"
                     },
                     {
-                      "_comment": "NAM6 \u2014 1 in all 128 rewards of 20260903; no name in xEdit or the UI model.",
+                      "_comment": "NAM6 \u2014 the number of Items groups that follow: 1 on every reward through 20260928; in 20261015, 2 on the two rank-1 species passives of each track (levels 5 and 20, e.g. Dog Stimpak Fetcher 1 and Bounty Sniffer 1). Equal to the group count on all 292 rewards of both builds. The binder ends the rarray at NAM7, so no count_path is needed.",
                       "kind": "integer",
-                      "name": "Unknown",
+                      "name": "Item Count",
                       "width": "u32",
                       "signed": false,
                       "sig": "NAM6"
                     },
                     {
-                      "_comment": "VPRI \u2014 1 in all 128 rewards. VPR* signatures occur nowhere in xEdit (any game) and nowhere else in fo76.json.",
+                      "_comment": "Items \u2014 VPRI-led groups, NAM6 of them. One per reward through 20260928; 20261015 adds a second on each track's two rank-1 species passives, pointing at that passive's WorldPets_LvReward_BUFF_* GMRW (e.g. 0x008B200C, Stimpak Fetcher).",
+                      "kind": "rarray",
+                      "name": "Items",
+                      "element": {
+                        "kind": "rstruct",
+                        "name": "Item",
+                        "members": [
+                          {
+                            "_comment": "VPRI \u2014 1 on every single-item reward; on a two-item reward, 1 then 2 (likely the item's 1-based index). VPR* signatures occur nowhere in xEdit (any game) and nowhere else in fo76.json.",
+                            "kind": "integer",
+                            "name": "Unknown",
+                            "width": "u32",
+                            "signed": false,
+                            "sig": "VPRI"
+                          },
+                          {
+                            "_comment": "VPRF \u2014 0 except on the first item of a two-item reward (1), which also carries no VPRR.",
+                            "kind": "integer",
+                            "name": "Unknown 2",
+                            "width": "u32",
+                            "signed": false,
+                            "sig": "VPRF"
+                          },
+                          {
+                            "_comment": "VPRR \u2014 the GMRW pointer, named as xEdit names the same role in wbReward ('Reward Record', wbDefinitionsFO76.pas:7016; GMRW's own DNAM carries the same name in fo76.json). This struct is NOT wbReward \u2014 wbReward's NAM7 is 'XP Amount Global' (a GLOB FormID), here NAM7 is a small integer \u2014 so wbReward's other names must not be imported.",
+                            "kind": "formid",
+                            "name": "Reward Record",
+                            "valid_refs": [
+                              "GMRW"
+                            ],
+                            "sig": "VPRR"
+                          },
+                          {
+                            "_comment": "ITME \u2014 xEdit uses ITME only as wbEmpty end markers (wbDefinitionsFO76.pas:7017 'Reward End Marker', :11796 and FO4 :9525 'Marker End'). This one closes an item; the second ITME, after NAM7, closes the reward.",
+                            "kind": "empty",
+                            "name": "Reward Record End Marker",
+                            "sig": "ITME"
+                          }
+                        ]
+                      }
+                    },
+                    {
+                      "_comment": "NAM7 \u2014 1 on all 128 rewards through 20260928; in 20261015, 0 on 27, 1 on 128 and 2 on 9 of 164 rewards. Not the item count: all eight two-item rewards read 2, and so does one single-item reward. The NAM7 names elsewhere in fo76.json belong to other structs.",
                       "kind": "integer",
-                      "name": "Unknown 2",
-                      "width": "u32",
-                      "signed": false,
-                      "sig": "VPRI"
-                    },
-                    {
-                      "_comment": "VPRF \u2014 0 in all 128 rewards.",
-                      "kind": "integer",
-                      "name": "Unknown 3",
-                      "width": "u32",
-                      "signed": false,
-                      "sig": "VPRF"
-                    },
-                    {
-                      "_comment": "VPRR \u2014 the GMRW pointer, named as xEdit names the same role in wbReward ('Reward Record', wbDefinitionsFO76.pas:7016; GMRW's own DNAM carries the same name in fo76.json). This struct is NOT wbReward \u2014 wbReward's NAM7 is 'XP Amount Global' (a GLOB FormID), here NAM7 is a constant 1 \u2014 so wbReward's other names must not be imported.",
-                      "kind": "formid",
-                      "name": "Reward Record",
-                      "valid_refs": [
-                        "GMRW"
-                      ],
-                      "sig": "VPRR"
-                    },
-                    {
-                      "_comment": "ITME x2 \u2014 xEdit uses ITME only as wbEmpty end markers (wbDefinitionsFO76.pas:7017 'Reward End Marker', :11796 and FO4 :9525 'Marker End'). The first closes the VPRI/VPRF/VPRR group, the second the reward. Both are kind 'empty', the one kind decoded with the unscoped take_first (src/decode/walk.rs), so they are matched positionally; a missing ITME would shift every later marker.",
-                      "kind": "empty",
-                      "name": "Reward Record End Marker",
-                      "sig": "ITME"
-                    },
-                    {
-                      "_comment": "NAM7 \u2014 1 in all 128 rewards; the NAM7 names elsewhere in fo76.json belong to other structs.",
-                      "kind": "integer",
-                      "name": "Unknown 4",
+                      "name": "Unknown",
                       "width": "u32",
                       "signed": false,
                       "sig": "NAM7"
@@ -87159,7 +87170,7 @@
                       "sig": "ITME"
                     },
                     {
-                      "_comment": "NAM3 (0-byte) \u2014 present only between two rewards of the same entry (8 of 128). Deliberately 'lstring', not 'empty': 'empty' is the one kind decoded with the unscoped take_first (src/decode/walk.rs), which here stole the NEXT entry's Description Text (same sig) and corrupted every entry after the first two-reward one; lstring is element-scoped and renders the same null. Regression test: tests/decode_records/pet_tracks.rs pgtr_world_pets_radhog_track_decodes_correctly.",
+                      "_comment": "NAM3 (0-byte) \u2014 present only between two rewards of the same entry (8 of 128 in 20260903); decodes to null. It binds only after this reward's end marker, so the next reward's Description Text (also NAM3) stays with that reward. Regression test: tests/decode_records/pet_tracks.rs pgtr_world_pets_radhog_track_decodes_correctly.",
                       "kind": "lstring",
                       "name": "Next Reward Present",
                       "sig": "NAM3"

@@ -973,7 +973,7 @@ fn pgtr_world_pets_radhog_track_decodes_correctly() {
 
     // Both reward slots' GMRW pointer must be present formid strings.
     for (idx, reward) in [(0, &rewards_25[0]), (1, &rewards_25[1])] {
-        let record = reward["Reward"]["Reward Record"]
+        let record = reward["Reward"]["Items"][0]["Item"]["Reward Record"]
             .as_str()
             .unwrap_or_else(|| panic!("threshold-25 entry reward {idx} must have Reward Record"));
         assert!(
@@ -981,4 +981,90 @@ fn pgtr_world_pets_radhog_track_decodes_correctly() {
             "reward {idx}'s Reward Record must be a formid string, got {record}"
         );
     }
+}
+
+/// PGTR 0x0094A74B — `WorldPets_ProgressionTrack_Dog_NEW` — decodes a
+/// two-item reward.
+///
+/// From build 20261015 (form_version 211) a reward can carry more than one
+/// VPRI-led item group, and NAM6 counts them: the rank-1 species passives
+/// (here Stimpak Fetcher 1 at level 5) hold an entitlement item and a second
+/// item pointing at the passive's GMRW. The "Items" rarray holds the groups;
+/// without it the second group's subrecords land in `_unmapped`.
+///
+/// Verbatim subrecords from `esm get <esm> 0x0094A74B --raw`: the record
+/// header subrecords, the first of its 30 track entries, and the record tail.
+/// PGTE still reads 30. The ESM is localized, so the lstrings hold
+/// string-table IDs; this test asserts structure and references only.
+#[test]
+fn pgtr_world_pets_dog_track_decodes_two_item_reward() {
+    let result = decode_fixture(
+        "PGTR",
+        211,
+        &[
+            (
+                "EDID",
+                "576f726c64506574735f50726f6772657373696f6e547261636b5f446f675f4e455700",
+            ),
+            ("FTAG", "576f726c645065747300"),
+            ("FULL", "a5ba0261"),
+            ("PGT1", "71739200"),
+            ("PGTE", "1e000000"),
+            ("PGTI", "18cc476a00000000"),
+            ("NAM0", "05000000"),
+            ("NAM1", "00000000"),
+            ("NAM2", ""),
+            ("NAM1", "a6ba0261"),
+            ("NAM2", "a7ba0261"),
+            ("NAM3", "55c80261"),
+            ("NAM4", "9d4d9200"),
+            ("NAM5", "814d9200"),
+            ("NAM6", "02000000"),
+            ("VPRI", "01000000"),
+            ("VPRF", "01000000"),
+            ("ITME", ""),
+            ("VPRI", "02000000"),
+            ("VPRF", "00000000"),
+            ("VPRR", "0c208b00"),
+            ("ITME", ""),
+            ("NAM7", "02000000"),
+            ("ITME", ""),
+            ("NAM4", "00000000"),
+            ("ITME", ""),
+            ("NAM0", "01"),
+            ("NAM1", "00"),
+        ],
+    );
+
+    assert_record_type(&result, "Progression Track");
+    assert_fully_decoded(&result);
+    let entries = result["Track Entries"]
+        .as_array()
+        .expect("Track Entries must decode");
+    assert_eq!(entries.len(), 1, "the fixture holds one entry");
+    let entry = &entries[0]["Track Entry"];
+    assert_eq!(entry["Level Threshold"].as_u64(), Some(5));
+    let rewards = entry["Rewards"].as_array().expect("Rewards must decode");
+    assert_eq!(rewards.len(), 1);
+    let reward = &rewards[0]["Reward"];
+    assert_eq!(reward["Item Count"].as_u64(), Some(2));
+    let items = reward["Items"].as_array().expect("Items must decode");
+    assert_eq!(
+        items.len() as u64,
+        reward["Item Count"].as_u64().unwrap(),
+        "Item Count must equal Items.len()"
+    );
+    assert_eq!(items[0]["Item"]["Unknown"].as_u64(), Some(1));
+    assert_eq!(items[0]["Item"]["Unknown 2"].as_u64(), Some(1));
+    assert!(items[0]["Item"].get("Reward Record").is_none());
+    assert_eq!(items[1]["Item"]["Unknown"].as_u64(), Some(2));
+    assert_eq!(
+        items[1]["Item"]["Reward Record"].as_str(),
+        Some("0x008B200C"),
+        "the second item points at WorldPets_LvReward_BUFF_StimpakFetcher"
+    );
+    assert_eq!(reward["Unknown"].as_u64(), Some(2), "NAM7 after the items");
+    assert_eq!(entry["Has Prerequisite"]["value"].as_u64(), Some(0));
+    assert_eq!(result["Unknown 3"].as_u64(), Some(1));
+    assert_eq!(result["Unknown 4"].as_u64(), Some(0));
 }
