@@ -772,12 +772,18 @@ pub(crate) const ORDER_SIGNIFICANT_FIELDS: &[&str] = &[
     "Names",
 ];
 
-/// Whether the array at `key` of `parent` is a Papyrus array: the `value`
-/// of a script property or struct member (`{"name", "type", "value"}`, the
-/// VMAD decoder's shape) whose type is an array type (11–15, or 17 for an
-/// array of structs), or a variable array's `items`. Scripts read these by
-/// index, so they diff position by position ([`indexed_array_diff`]). A
-/// struct's (type 7) members are named, not indexed.
+/// Packed arrays whose element `i` belongs to biped slot `30 + i`: RACE's
+/// `RBPC` (`Biped Object Condition AVs`) and `RBPI`. A value moving between
+/// slots leaves the multiset unchanged, so these diff by index.
+pub(crate) const SLOT_INDEXED_FIELDS: &[&str] = &["Biped Object Condition AVs", "RBPI - Unknown"];
+
+/// Whether the array at `key` of `parent` is addressed by index: a Papyrus
+/// array — the `value` of a script property or struct member (`{"name",
+/// "type", "value"}`, the VMAD decoder's shape) whose type is an array type
+/// (11–15, or 17 for an array of structs), or a variable array's `items` —
+/// or a per-slot array ([`SLOT_INDEXED_FIELDS`]). These diff position by
+/// position ([`indexed_array_diff`]). A Papyrus struct's (type 7) members
+/// are named, not indexed.
 pub(crate) fn is_indexed_array(key: &str, parent: &serde_json::Map<String, Value>) -> bool {
     match key {
         "value" => {
@@ -788,7 +794,7 @@ pub(crate) fn is_indexed_array(key: &str, parent: &serde_json::Map<String, Value
                     .is_some_and(|t| (11..=15).contains(&t) || t == 17)
         }
         "items" => parent.get("_variable_array") == Some(&Value::Bool(true)),
-        _ => false,
+        _ => SLOT_INDEXED_FIELDS.contains(&key),
     }
 }
 

@@ -677,6 +677,39 @@ fn array_diff_positional_fallback_same_length() {
     assert_eq!(changed[0]["changes"]["X"]["to"], json!(9));
 }
 
+/// RACE's per-biped-slot arrays diff by slot: HumanRace's one RBPI `2`
+/// (slot index 26 in 20261015) moving to slot 25 keeps the multiset of
+/// values, which a set diff would report as no change at all.
+#[test]
+fn array_diff_pairs_biped_slot_arrays_by_slot() {
+    let slots = |two_at: usize| {
+        let mut v = vec![json!(1); 32];
+        v[two_at] = json!(2);
+        v
+    };
+    for field in ["RBPI - Unknown", "Biped Object Condition AVs"] {
+        let a = json!({ field: slots(26) });
+        let b = json!({ field: slots(25) });
+        let ad = &json_diff(&a, &b)[field]["_array_diff"];
+        assert_eq!(ad["strategy"], json!("positional"), "{field}");
+        assert!(ad.get("reorder_only").is_none(), "{field}");
+        let changed: Vec<_> = ad["changed"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| (c["key"]["index"].clone(), c["changes"].clone()))
+            .collect();
+        assert_eq!(
+            changed,
+            [
+                (json!(25), json!({"from": 1, "to": 2})),
+                (json!(26), json!({"from": 2, "to": 1})),
+            ],
+            "{field}"
+        );
+    }
+}
+
 #[test]
 fn array_diff_multiple_formid_members_compose_into_a_key() {
     // Two FormID-shaped members ("A" and "B") with no other heuristic match:
