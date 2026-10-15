@@ -1988,6 +1988,15 @@
                     "name": "Value",
                     "width": "u32",
                     "signed": false
+                  },
+                  {
+                    "kind": "formid",
+                    "name": "Curve Table",
+                    "valid_refs": [
+                      "CURV",
+                      "NULL"
+                    ],
+                    "from_version": 152
                   }
                 ]
               },
@@ -4263,6 +4272,15 @@
                     "name": "Value",
                     "width": "u32",
                     "signed": false
+                  },
+                  {
+                    "kind": "formid",
+                    "name": "Curve Table",
+                    "valid_refs": [
+                      "CURV",
+                      "NULL"
+                    ],
+                    "from_version": 152
                   }
                 ]
               },
@@ -5389,6 +5407,15 @@
                     "name": "Value",
                     "width": "u32",
                     "signed": false
+                  },
+                  {
+                    "kind": "formid",
+                    "name": "Curve Table",
+                    "valid_refs": [
+                      "CURV",
+                      "NULL"
+                    ],
+                    "from_version": 152
                   }
                 ]
               },
@@ -7403,6 +7430,15 @@
                     "name": "Value",
                     "width": "u32",
                     "signed": false
+                  },
+                  {
+                    "kind": "formid",
+                    "name": "Curve Table",
+                    "valid_refs": [
+                      "CURV",
+                      "NULL"
+                    ],
+                    "from_version": 152
                   }
                 ]
               },
@@ -10167,6 +10203,15 @@
                     "name": "Value",
                     "width": "u32",
                     "signed": false
+                  },
+                  {
+                    "kind": "formid",
+                    "name": "Curve Table",
+                    "valid_refs": [
+                      "CURV",
+                      "NULL"
+                    ],
+                    "from_version": 152
                   }
                 ]
               },
@@ -15909,6 +15954,15 @@
                     "name": "Value",
                     "width": "u32",
                     "signed": false
+                  },
+                  {
+                    "kind": "formid",
+                    "name": "Curve Table",
+                    "valid_refs": [
+                      "CURV",
+                      "NULL"
+                    ],
+                    "from_version": 152
                   }
                 ]
               },
@@ -18192,6 +18246,15 @@
                     "name": "Value",
                     "width": "u32",
                     "signed": false
+                  },
+                  {
+                    "kind": "formid",
+                    "name": "Curve Table",
+                    "valid_refs": [
+                      "CURV",
+                      "NULL"
+                    ],
+                    "from_version": 152
                   }
                 ]
               },
@@ -22128,6 +22191,15 @@
                     "name": "Value",
                     "width": "u32",
                     "signed": false
+                  },
+                  {
+                    "kind": "formid",
+                    "name": "Curve Table",
+                    "valid_refs": [
+                      "CURV",
+                      "NULL"
+                    ],
+                    "from_version": 152
                   }
                 ]
               },
@@ -23468,6 +23540,15 @@
                     "name": "Value",
                     "width": "u32",
                     "signed": false
+                  },
+                  {
+                    "kind": "formid",
+                    "name": "Curve Table",
+                    "valid_refs": [
+                      "CURV",
+                      "NULL"
+                    ],
+                    "from_version": 152
                   }
                 ]
               },
@@ -31103,6 +31184,15 @@
                     "name": "Value",
                     "width": "u32",
                     "signed": false
+                  },
+                  {
+                    "kind": "formid",
+                    "name": "Curve Table",
+                    "valid_refs": [
+                      "CURV",
+                      "NULL"
+                    ],
+                    "from_version": 152
                   }
                 ]
               },
@@ -32829,6 +32919,15 @@
                     "name": "Value",
                     "width": "u32",
                     "signed": false
+                  },
+                  {
+                    "kind": "formid",
+                    "name": "Curve Table",
+                    "valid_refs": [
+                      "CURV",
+                      "NULL"
+                    ],
+                    "from_version": 152
                   }
                 ]
               },
@@ -36163,6 +36262,15 @@
                     "name": "Value",
                     "width": "u32",
                     "signed": false
+                  },
+                  {
+                    "kind": "formid",
+                    "name": "Curve Table",
+                    "valid_refs": [
+                      "CURV",
+                      "NULL"
+                    ],
+                    "from_version": 152
                   }
                 ]
               },
@@ -41508,6 +41616,15 @@
                     "name": "Value",
                     "width": "u32",
                     "signed": false
+                  },
+                  {
+                    "kind": "formid",
+                    "name": "Curve Table",
+                    "valid_refs": [
+                      "CURV",
+                      "NULL"
+                    ],
+                    "from_version": 152
                   }
                 ]
               },
@@ -43430,6 +43547,15 @@
                     "name": "Value",
                     "width": "u32",
                     "signed": false
+                  },
+                  {
+                    "kind": "formid",
+                    "name": "Curve Table",
+                    "valid_refs": [
+                      "CURV",
+                      "NULL"
+                    ],
+                    "from_version": 152
                   }
                 ]
               },
@@ -46179,6 +46305,15 @@
                     "name": "Value",
                     "width": "u32",
                     "signed": false
+                  },
+                  {
+                    "kind": "formid",
+                    "name": "Curve Table",
+                    "valid_refs": [
+                      "CURV",
+                      "NULL"
+                    ],
+                    "from_version": 152
                   }
                 ]
               },
@@ -56688,6 +56823,15 @@
                     "name": "Value",
                     "width": "u32",
                     "signed": false
+                  },
+                  {
+                    "kind": "formid",
+                    "name": "Curve Table",
+                    "valid_refs": [
+                      "CURV",
+                      "NULL"
+                    ],
+                    "from_version": 152
                   }
                 ]
               },
@@ -75034,6 +75178,15 @@
                     "name": "Value",
                     "width": "u32",
                     "signed": false
+                  },
+                  {
+                    "kind": "formid",
+                    "name": "Curve Table",
+                    "valid_refs": [
+                      "CURV",
+                      "NULL"
+                    ],
+                    "from_version": 152
                   }
                 ]
               },
@@ -76843,6 +76996,15 @@
                     "name": "Value",
                     "width": "u32",
                     "signed": false
+                  },
+                  {
+                    "kind": "formid",
+                    "name": "Curve Table",
+                    "valid_refs": [
+                      "CURV",
+                      "NULL"
+                    ],
+                    "from_version": 152
                   }
                 ]
               },
@@ -77949,6 +78111,15 @@
                     "name": "Value",
                     "width": "u32",
                     "signed": false
+                  },
+                  {
+                    "kind": "formid",
+                    "name": "Curve Table",
+                    "valid_refs": [
+                      "CURV",
+                      "NULL"
+                    ],
+                    "from_version": 152
                   }
                 ]
               },
@@ -79383,6 +79554,15 @@
                     "name": "Value",
                     "width": "u32",
                     "signed": false
+                  },
+                  {
+                    "kind": "formid",
+                    "name": "Curve Table",
+                    "valid_refs": [
+                      "CURV",
+                      "NULL"
+                    ],
+                    "from_version": 152
                   }
                 ]
               },
@@ -83110,6 +83290,15 @@
                     "name": "Value",
                     "width": "u32",
                     "signed": false
+                  },
+                  {
+                    "kind": "formid",
+                    "name": "Curve Table",
+                    "valid_refs": [
+                      "CURV",
+                      "NULL"
+                    ],
+                    "from_version": 152
                   }
                 ]
               },

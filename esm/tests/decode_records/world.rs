@@ -623,3 +623,91 @@ fn refr_map_marker_binds_every_fast_travel_menu_item() {
         );
     }
 }
+
+/// ACTI 0x00052850 — `WindingPathHealingEnergy` — decodes its 12-byte
+/// Destructible resistances.
+///
+/// From form_version 152 each DAMC element carries a Curve Table after
+/// Damage Type and Value (wbDefinitionsFO76.pas, `wbDEST`). Read as 8-byte
+/// elements, this 48-byte DAMC decodes as six misaligned resistances.
+///
+/// Verbatim subrecords from `esm get <esm> 0x00052850 --raw` (form_version
+/// 163, 20261015).
+#[test]
+fn acti_winding_path_healing_energy_decodes_resistance_curve_tables() {
+    let result = decode_fixture(
+        "ACTI",
+        163,
+        &[
+            ("EDID", "57696e64696e67506174684865616c696e67456e6572677900"),
+            (
+                "VMAD",
+                "0600020001001b0057696e64696e675061746850696c6c61724865616c53637269707400\
+             040011004d544e4d30335f4d656469746174696f6e01010000ffff7ee6120009004c6966\
+             6554696d6572040100007042120057696e64696e67506174685f54726163657301010000\
+             ffffa7e61300180057696e64696e675061746850696c6c61724b6579776f726401010000\
+             ffff69db1400",
+            ),
+            ("OBND", "d2ffd2ff00002e002e00000c"),
+            (
+                "MODL",
+                "7365746472657373696e675c77696e64696e677061746870696c6c61725c57696e64696e\
+             67506174684265616d30312e6e696600",
+            ),
+            (
+                "MODT",
+                "04000000050000000000000002000000020000005ab83a8264647300cfca05204e93b0f0\
+             6464730036160e1701cfb1e46464730036160e176830e18c64647300cfca052083f22a8a\
+             64647300cfca052073d9f7946267736dca902b96fc2d9de46267736dca902b96",
+            ),
+            ("ENLM", "03000000"),
+            ("DEST", "640000000300000000000000"),
+            (
+                "DAMC",
+                "830a06006400000000000000840a06006400000000000000850a06006400000000000000\
+             860a06006400000000000000",
+            ),
+            (
+                "DSTD",
+                "6300010d2c0100000000000000000000000000000000000000000000",
+            ),
+            ("DSTF", ""),
+            (
+                "DSTD",
+                "5f01020d2c0100000000000000000000000000000000000000000000",
+            ),
+            ("DSTF", ""),
+            (
+                "DSTD",
+                "3202020e0000000018b30e0000000000000000000000000000000000",
+            ),
+            ("DSTF", ""),
+            ("PRPS", "12e410000000a04000000000"),
+            ("PNAM", "cc4c3300"),
+            ("FNAM", "0000"),
+            ("CNDC", "00000000"),
+            ("CITC", "02000000"),
+            (
+                "CTDA",
+                "000200000000803f3c03000000000000000000000000000000000000ffffffff",
+            ),
+            (
+                "CTDA",
+                "000200000000803f4a0000009de61300000000000000000000000000ffffffff",
+            ),
+        ],
+    );
+
+    assert_record_type(&result, "Activator");
+    assert_fully_decoded(&result);
+    let resistance = |dmgt: &str| json!({"Damage Type": dmgt, "Value": 100, "Curve Table": null});
+    assert_eq!(
+        result.pointer("/Destructible/Resistances"),
+        Some(&json!([
+            resistance("0x00060A83"),
+            resistance("0x00060A84"),
+            resistance("0x00060A85"),
+            resistance("0x00060A86"),
+        ]))
+    );
+}
