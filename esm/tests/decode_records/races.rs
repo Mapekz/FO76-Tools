@@ -951,3 +951,153 @@ fn race_mothman_decodes_correctly() {
 // TES5Edit Pascal reference.  Overrides in `fo76.overrides.json` map them as
 // reverse-engineered or reference-grounded types; all tests assert
 // assert_fully_decoded.
+
+/// RACE 0x00847624 — `DustDevilRace` — decodes RBPI fully.
+///
+/// Build 20261015 (form_version 211) writes RBPI, 32 u32s (one per biped
+/// slot), directly after RBPC on all 161 races. No wbDefinitions*.pas defines
+/// it; a schema override inserts it after RBPC. Without it RBPI lands in
+/// `_unmapped`.
+///
+/// Verbatim subrecords from `esm get <esm> 0x00847624 --raw`. The ESM is
+/// localized, so FULL and the other lstrings hold string-table IDs; this test
+/// asserts structure only.
+#[test]
+fn race_dust_devil_decodes_rbpi() {
+    let result = decode_fixture(
+        "RACE",
+        211,
+        &[
+            ("EDID", "44757374446576696c5261636500"),
+            ("DURL", "4475737420446576696c7300"),
+            ("FULL", "6d380171"),
+            ("DESC", "00000000"),
+            ("SPCT", "01000000"),
+            ("SPLO", "f0218500"),
+            ("WNAM", "1a768400"),
+            ("BOD2", "00000000"),
+            ("KSIZ", "0c000000"),
+            (
+                "KWDA",
+                "97115f00164b6300d43d12002d8d2400d1ff59008fdb2200b0b86f004c7142008e1b1100\
+             fba944001882530061058500",
+            ),
+            (
+                "PRPS",
+                "c20200000000000000000000c30200000000000000000000c40200000000000000000000\
+             c50200000000000000000000c60200000000000000000000c70200000000000000000000\
+             c80200000000000000000000d40200000000c84200000000d50200000000000000000000\
+             e00200000000803f00000000dc0200000000000000000000d70200000000000000000000\
+             d90200000000000000000000d80200000000000000000000",
+            ),
+            (
+                "DATA",
+                "0000803f0000803f4ca6aa3e4ca6aa3e4ca6aa3eabaaaa3eabaaaa3eabaaaa3e007d5002\
+             0000803f0000803f01000000ffffffffffffffff00000000ffffffffffffffff03000000\
+             00000000000000000000000000000000000000000000803e0000a0406242000400000000\
+             000000000000000000000000000000000000000000000000000096c300000000ffffffff\
+             000000000000000000000000000000000000000000000000000000000000000000000000\
+             0000000000000000000000000000000000000000000000000000b4420000b442ffffffff",
+            ),
+            ("MNAM", ""),
+            (
+                "ANAM",
+                "4163746f72732f44757374446576696c2f6368617261637465726173736574732f736b65\
+             6c65746f6e2e6e696600",
+            ),
+            ("MODT", "0400000000000000000000000000000000000000"),
+            ("FNAM", ""),
+            ("MTNM", "57414c4b"),
+            ("MTNM", "52554e31"),
+            ("MTNM", "534e454b"),
+            ("MTNM", "424c444f"),
+            ("MTNM", "5357494d"),
+            ("VTCK", "1ac607002e000000"),
+            ("PNAM", "0000a040"),
+            ("UNAM", "00004040"),
+            ("NAM1", ""),
+            ("MNAM", ""),
+            ("INDX", "00000000"),
+            ("FNAM", ""),
+            ("INDX", "00000000"),
+            ("GNAM", "1b768400"),
+            ("NAM3", ""),
+            ("MNAM", ""),
+            (
+                "MODL",
+                "4163746f72735c44757374446576696c5c44757374446576696c2e686b7800",
+            ),
+            ("MODT", "0400000000000000000000000000000000000000"),
+            ("FNAM", ""),
+            ("NAME", "00"),
+            ("NAME", "00"),
+            ("NAME", "00"),
+            ("NAME", "424f445900"),
+            ("NAME", "00"),
+            ("NAME", "00"),
+            ("NAME", "00"),
+            ("NAME", "00"),
+            ("NAME", "00"),
+            ("NAME", "00"),
+            ("NAME", "00"),
+            ("NAME", "00"),
+            ("NAME", "00"),
+            ("NAME", "00"),
+            ("NAME", "00"),
+            ("NAME", "00"),
+            ("NAME", "00"),
+            ("NAME", "00"),
+            ("NAME", "00"),
+            ("NAME", "00"),
+            ("NAME", "00"),
+            ("NAME", "00"),
+            ("NAME", "00"),
+            ("NAME", "00"),
+            ("NAME", "00"),
+            ("NAME", "00"),
+            ("NAME", "00"),
+            ("NAME", "00"),
+            ("NAME", "00"),
+            ("NAME", "00"),
+            ("NAME", "00"),
+            ("NAME", "00"),
+            (
+                "RBPC",
+                "000000000000000000000000000000000000000000000000000000000000000000000000\
+             000000000000000000000000000000000000000000000000000000000000000000000000\
+             000000000000000000000000000000000000000000000000000000000000000000000000\
+             0000000000000000000000000000000000000000",
+            ),
+            (
+                "RBPI",
+                "010000000100000001000000010000000100000001000000010000000100000001000000\
+             010000000100000001000000010000000100000001000000010000000100000001000000\
+             010000000100000001000000010000000100000001000000010000000100000001000000\
+             0100000001000000010000000100000001000000",
+            ),
+            ("VNAM", "00f0fff8"),
+            ("WKMV", "0d580300"),
+            ("SNAM", "6e380171"),
+            ("TSLT", "00"),
+        ],
+    );
+
+    assert_fully_decoded(&result);
+    let rbpi = result
+        .get("RBPI - Unknown")
+        .and_then(|v| v.as_array())
+        .expect("RBPI must decode");
+    assert_eq!(rbpi.len(), 32, "one RBPI value per biped slot");
+    assert!(
+        rbpi.iter().all(|v| v.as_u64() == Some(1)),
+        "every DustDevilRace RBPI slot reads 1"
+    );
+    assert_eq!(
+        result
+            .get("Biped Object Condition AVs")
+            .and_then(|v| v.as_array())
+            .map(Vec::len),
+        Some(32),
+        "RBPC before it still decodes"
+    );
+}

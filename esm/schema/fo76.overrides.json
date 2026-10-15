@@ -51,6 +51,17 @@
       }
     },
     {
+      "record": "BOOK",
+      "op": "insert_after",
+      "path": [
+        "XALG"
+      ],
+      "reason": "FTAG Form Tags \u2014 live-game drift, 20261015 (fv 211); xEdit declares wbFTAGs on 23 types, not BOOK. Observed order EDID OBND PTRN XALG FTAG FULL on the 12 Gauss Pistol dual-stat mod plans, e.g. recipe_mod_GaussPistol_Magazine_Ammo-ArmorPen 0x0094F7E2 = 'mod_dual'.",
+      "node": {
+        "$pascal_var": "wbFTAGs"
+      }
+    },
+    {
       "record": "BPTD",
       "op": "insert_after",
       "path": [
@@ -166,6 +177,17 @@
         "XALG"
       ],
       "reason": "FTAG Form Tags \u2014 live-game drift, 20260928 (fv 211); xEdit declares wbFTAGs on 23 types, not EMOT. Observed order EDID OBND FTAG FULL, e.g. WorldPets_Emote_Down 0x00950953 = 'WorldPets'.",
+      "node": {
+        "$pascal_var": "wbFTAGs"
+      }
+    },
+    {
+      "record": "ENCH",
+      "op": "insert_after",
+      "path": [
+        "Object Placement Defaults"
+      ],
+      "reason": "FTAG Form Tags \u2014 live-game drift, 20261015 (fv 211); xEdit declares wbFTAGs on 23 types, not ENCH. Observed order EDID OBND FTAG FULL on the 8 WorldPets_Enc_* enchantments, e.g. WorldPets_Enc_Fun_Festation 0x0095F7B4 = 'WorldPets'.",
       "node": {
         "$pascal_var": "wbFTAGs"
       }
@@ -1718,6 +1740,25 @@
     },
     {
       "record": "RACE",
+      "op": "insert_after",
+      "path": [
+        "RBPC"
+      ],
+      "reason": "RBPI \u2014 live-game drift, 20261015 (fv 211); absent from every wbDefinitions*.pas. 128 bytes directly after RBPC (Biped Object Condition AVs) on all 161 races: one u32 per biped slot, like RBPC. Every slot reads 1 except HumanRace 0x00013746 slot index 26, which reads 2; meaning unknown.",
+      "node": {
+        "kind": "array",
+        "name": "RBPI - Unknown",
+        "sig": "RBPI",
+        "element": {
+          "kind": "integer",
+          "name": "Slot 30+",
+          "width": "u32",
+          "signed": false
+        }
+      }
+    },
+    {
+      "record": "RACE",
       "op": "append",
       "path": [],
       "reason": "Pet Commands \u2014 live-game drift, in no wbDefinitions*.pas. Shape read off the 6 CAMPPets_*Race records (Cat_Tabby, Cat_RoboPaw, Dog_GermanShepherd, Dog_RoboPaw, RadHog, Deathclaw), 4 commands each.",
@@ -1785,17 +1826,18 @@
     },
     {
       "record": "REFR",
-      "op": "append",
-      "path": [],
-      "reason": "MCND \u2014 live-game drift; absent from TES5Edit REFR in FO76, FO4, and SF1 (checked all three wbDefinitions*.pas). Seen only on the map-marker REFR HighwayTownMapMarker (0x007E808C), which carries 2 occurrences of 4 zero bytes. Kept as unknown/hex, wrapped in an rarray (matching NOCM's wbRArray('Unknown Datas', wbUnknown(DATA)) precedent, wbDefinitionsFO76.pas:15884) since a plain (non-array) 'unknown' member only consumes one of the 2 instances from the shared by_sig queue, leaving the second as _unmapped.",
+      "op": "insert_after",
+      "path": [
+        "Map Marker",
+        "Fast Travel Menu Items",
+        "element",
+        "VNAM"
+      ],
+      "reason": "MCND \u2014 live-game drift; absent from TES5Edit REFR in FO76, FO4, and SF1 (checked all three wbDefinitions*.pas). Seen only on the map-marker REFR HighwayTownMapMarker (0x007E808C): 4 zero bytes after each fast-travel menu item's VNAM (ISIZ 2, then ANAM VNAM MCND twice) in fv 209 (20260717-20260821) and fv 211 (20261015); fv 206/207 builds omit it. Kept as unknown bytes.",
       "node": {
-        "kind": "rarray",
-        "name": "Unknown MCND",
-        "element": {
-          "kind": "unknown",
-          "sig": "MCND",
-          "name": "Unknown"
-        }
+        "kind": "unknown",
+        "sig": "MCND",
+        "name": "MCND - Unknown"
       }
     },
     {

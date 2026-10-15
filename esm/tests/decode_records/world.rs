@@ -559,3 +559,67 @@ fn pkin_child_pack_in_pairs_decode_per_entry() {
     assert_eq!(refs(0), Some(json!("0x0089F4C2")));
     assert_eq!(refs(1), Some(json!("0x0089F4BB")));
 }
+
+/// REFR 0x007E808C — `HighwayTownMapMarker` — binds both fast-travel menu
+/// items.
+///
+/// Builds of form_version 209 (20260717-20260821) and 211 (20261015) write
+/// MCND, 4 zero bytes, after each menu item's VNAM: ISIZ 2, then ANAM VNAM
+/// MCND twice. A record-level MCND member took the first MCND and left the
+/// second item's ANAM and VNAM in `_unmapped`; the override now places MCND
+/// inside the menu item.
+///
+/// Verbatim subrecords from `esm get <esm> 0x007E808C --raw` (form_version
+/// 211). The ESM is localized, so FULL and VNAM hold string-table IDs; this
+/// test asserts structure and references only.
+#[test]
+fn refr_map_marker_binds_every_fast_travel_menu_item() {
+    let result = decode_fixture(
+        "REFR",
+        211,
+        &[
+            ("EDID", "48696768776179546f776e4d61704d61726b657200"),
+            ("NAME", "10000000"),
+            ("XMRK", ""),
+            ("FNAM", "08"),
+            ("FULL", "e3770261"),
+            ("TNAM", "6e00"),
+            ("ISIZ", "02000000"),
+            ("ANAM", "42107d00"),
+            ("VNAM", "e4770261"),
+            ("MCND", "00000000"),
+            ("ANAM", "41378500"),
+            ("VNAM", "e5770261"),
+            ("MCND", "00000000"),
+            ("XLKR", "7523630042107d00"),
+            ("XLKR", "00000000826b8600"),
+            ("XLKT", ""),
+            ("XRDS", "00409c45"),
+            ("XLRT", "ca4c8600"),
+            ("XLYR", "74df7e00"),
+            ("DATA", "006a64c80094c3470080bc4500000000000000808cc01240"),
+        ],
+    );
+
+    assert_record_type(&result, "Placed Object");
+    assert_fully_decoded(&result);
+    let items = result
+        .pointer("/Map Marker/Fast Travel Menu Items")
+        .and_then(Value::as_array)
+        .expect("menu items must decode");
+    assert_eq!(items.len(), 2, "ISIZ is 2");
+    let refs: Vec<_> = items
+        .iter()
+        .map(|item| {
+            item.pointer("/Menu Item/Interior Marker Reference")
+                .cloned()
+        })
+        .collect();
+    assert_eq!(refs, [Some(json!("0x007D1042")), Some(json!("0x00853741"))]);
+    for (idx, item) in items.iter().enumerate() {
+        assert!(
+            item.pointer("/Menu Item/MCND - Unknown").is_some(),
+            "menu item {idx} keeps its own MCND"
+        );
+    }
+}

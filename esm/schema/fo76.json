@@ -9836,6 +9836,15 @@
           }
         },
         {
+          "kind": "rarray",
+          "name": "Form Tags",
+          "element": {
+            "kind": "string",
+            "name": "Form Tag",
+            "sig": "FTAG"
+          }
+        },
+        {
           "kind": "lstring",
           "sig": "FULL",
           "name": "Name"
@@ -19512,6 +19521,15 @@
               }
             ],
             "sig": "OPDS"
+          }
+        },
+        {
+          "kind": "rarray",
+          "name": "Form Tags",
+          "element": {
+            "kind": "string",
+            "name": "Form Tag",
+            "sig": "FTAG"
           }
         },
         {
@@ -61799,6 +61817,17 @@
           "sig": "RBPC"
         },
         {
+          "kind": "array",
+          "name": "RBPI - Unknown",
+          "sig": "RBPI",
+          "element": {
+            "kind": "integer",
+            "name": "Slot 30+",
+            "width": "u32",
+            "signed": false
+          }
+        },
+        {
           "kind": "rarray",
           "name": "Movement Data Overrides",
           "element": {
@@ -69307,6 +69336,11 @@
                     "kind": "lstring",
                     "sig": "VNAM",
                     "name": "Item Text"
+                  },
+                  {
+                    "kind": "unknown",
+                    "sig": "MCND",
+                    "name": "MCND - Unknown"
                   }
                 ]
               }
@@ -69831,15 +69865,6 @@
           "kind": "string",
           "name": "Comments",
           "sig": "MNAM"
-        },
-        {
-          "kind": "rarray",
-          "name": "Unknown MCND",
-          "element": {
-            "kind": "unknown",
-            "sig": "MCND",
-            "name": "Unknown"
-          }
         }
       ],
       "unordered": true

@@ -625,3 +625,60 @@ fn coen_etgr_marker_decodes() {
         "a present ETGR marker renders as null"
     );
 }
+
+/// BOOK 0x0094F7E2 — `recipe_mod_GaussPistol_Magazine_Ammo-ArmorPen` — decodes
+/// its Form Tags fully.
+///
+/// Build 20261015 (form_version 211) adds FTAG `mod_dual` to the 12 Gauss
+/// Pistol dual-stat mod plans; a schema override inserts it after XALG, just
+/// before FULL. Without it the FTAG lands in `_unmapped`.
+///
+/// Verbatim subrecords from `esm get <esm> 0x0094F7E2 --raw`.
+#[test]
+fn book_gauss_pistol_dual_mod_plan_decodes_form_tags() {
+    let result = decode_fixture(
+        "BOOK",
+        211,
+        &[
+            (
+                "EDID",
+                "7265636970655f6d6f645f4761757373506973746f6c5f4d6167617a696e655f416d6d6f\
+             2d41726d6f7250656e00",
+            ),
+            ("OBND", "f9fff2ff00000d000e000100"),
+            ("PTRN", "ad2e1e00"),
+            ("XALG", "8000000000000000"),
+            ("FTAG", "6d6f645f6475616c00"),
+            ("FULL", "05c00261"),
+            (
+                "MODL",
+                "50726f70735c496e7374523033426c75655072696e742e6e696600",
+            ),
+            ("MODT", "0400000000000000000000000000000000000000"),
+            ("ENLT", "ffffffff"),
+            ("ENLS", "0000803f"),
+            (
+                "AUUV",
+                "01000000000048420000f04100009c429a99193fcdcccc3d00000000",
+            ),
+            ("DESC", "00000000"),
+            ("YNAM", "0f4c1d00"),
+            ("KSIZ", "02000000"),
+            ("KWDA", "67153e0027433d00"),
+            ("VCRY", "0f000000"),
+            ("DATA", "f40100000000803e"),
+            ("DNAM", "2000000000000000000000000000"),
+            ("CNAM", "00000000"),
+            ("INAM", "32491100"),
+            ("BTOF", "00000000"),
+        ],
+    );
+
+    assert_record_type(&result, "Book");
+    assert_fully_decoded(&result);
+    assert_eq!(
+        result.get("Form Tags"),
+        Some(&json!([{"Form Tag": "mod_dual"}])),
+        "Form Tags"
+    );
+}

@@ -316,6 +316,109 @@ fn spel_ab_nemesis_rank00_decodes_correctly() {
     );
 }
 
+/// ENCH 0x0095F7B4 — `WorldPets_Enc_Fun_Festation` — decodes its Form Tags
+/// fully.
+///
+/// Build 20261015 (form_version 211) adds FTAG to the 8 WorldPets_Enc_*
+/// enchantments; a schema override inserts it after Object Placement
+/// Defaults, just before FULL. Without it the FTAG lands in `_unmapped`.
+///
+/// Verbatim subrecords from `esm get <esm> 0x0095F7B4 --raw`.
+#[test]
+fn ench_world_pets_fun_festation_decodes_form_tags() {
+    let result = decode_fixture(
+        "ENCH",
+        211,
+        &[
+            (
+                "EDID",
+                "576f726c64506574735f456e635f46756e5f466573746174696f6e00",
+            ),
+            ("OBND", "000000000000000000000000"),
+            ("FTAG", "576f726c645065747300"),
+            ("FULL", "03260141"),
+            (
+                "ENIT",
+                "000000000100000000000000000000000000000006000000000000000000000000000000",
+            ),
+            ("EFID", "98938c00"),
+            ("EFIT", "01000000000000000000000000000000"),
+            ("MAGF", "00000000"),
+            (
+                "CTDA",
+                "000000000000803fac03000000000000000000000000000000000000ffffffff",
+            ),
+            (
+                "CTDA",
+                "000000000000803fae0300006090e686000000000000000000000000ffffffff",
+            ),
+            ("CIS1", "74387448616741414141413d00"),
+            (
+                "CTDA",
+                "0000000000000000ae0300005890e686000000000000000000000000ffffffff",
+            ),
+            ("CIS1", "56694b37437741414141413d00"),
+            (
+                "CTDA",
+                "0000000000000000ae0300005090e686000000000000000000000000ffffffff",
+            ),
+            ("CIS1", "79637448616741414141413d00"),
+            ("MAGG", "93938c00"),
+            ("CODV", "00000000"),
+            ("EFID", "35a99300"),
+            ("EFIT", "02000000000000000000000000000000"),
+            ("MAGF", "00000000"),
+            (
+                "CTDA",
+                "000000000000803fac03000000000000000000000000000000000000ffffffff",
+            ),
+            (
+                "CTDA",
+                "000000000000803fae0300004890e686000000000000000000000000ffffffff",
+            ),
+            ("CIS1", "56694b37437741414141413d00"),
+            (
+                "CTDA",
+                "0000000000000000ae0300004090e686000000000000000000000000ffffffff",
+            ),
+            ("CIS1", "79637448616741414141413d00"),
+            ("MAGG", "95938c00"),
+            ("CODV", "00000000"),
+            ("EFID", "34a99300"),
+            ("EFIT", "03000000000000000000000000000000"),
+            ("MAGF", "00000000"),
+            (
+                "CTDA",
+                "000000000000803fac03000000000000000000000000000000000000ffffffff",
+            ),
+            (
+                "CTDA",
+                "000000000000803fae0300003890e686000000000000000000000000ffffffff",
+            ),
+            ("CIS1", "79637448616741414141413d00"),
+            ("MAGG", "94938c00"),
+            ("CODV", "00000000"),
+            ("MIID", "03000000"),
+        ],
+    );
+
+    assert_record_type(&result, "Enchantment");
+    assert_fully_decoded(&result);
+    assert_eq!(
+        result.get("Form Tags"),
+        Some(&serde_json::json!([{"Form Tag": "WorldPets"}])),
+        "Form Tags"
+    );
+    assert_eq!(
+        result
+            .get("Effects")
+            .and_then(|v| v.as_array())
+            .map(Vec::len),
+        Some(3),
+        "the three effects after FULL still bind"
+    );
+}
+
 /// SPEL 0x0092D8CA — `WorldPets_WellRested` — decodes its Form Tags fully.
 ///
 /// Build 20260928 (form_version 211) adds FTAG to 21 record types xEdit gives
