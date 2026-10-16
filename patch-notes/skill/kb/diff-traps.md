@@ -19,7 +19,9 @@ bundle that only reorders. Seen on VMAD `scripts[]`/`script_fragments`/alias slo
 `Attacks[]`/`Bone Scale Data[]`, LCTN `Master Worldspace Cells`/`Master Reference`, NPC_
 `Attacks[]` and PERK `Effects`. An array without the flag differs for real, though a mirrored
 pair (a `Damage Mult` 1.0 → 1.5 at one index, the reverse at another) can be a partial reorder
-beside the real change.
+beside the real change. Two PERK effect rows that trade Entry Point, Function, Float and conditions
+(with `Perk Entry ID` and `Run On (Tab Index)` trading too) are a swap the flag misses: compare rows
+as a multiset ignoring those bookkeeping fields, as on Lady Killer 2–3 (0x00065E33) on 20261015.
 
 **Example:** 20260903→20260914, 876 bundles whose members only reordered arrays (RACE `Bone Scale
 Data`, LCTN `Master Worldspace Cells`) tier DROP.
@@ -100,10 +102,16 @@ When the two snapshots' TES4 header `Version` differs (e.g. 279 → 283), skip t
   relinks.
 - WEAP `Sneak Attack Multiplier` and OMOD `Attribute Descriptor Keywords` appearing or vanishing
   wholesale. On a same-build pair, `Attribute Descriptor Keywords` changes are real data.
+- Records re-saved at a newer form version (seen 293 → 294): OMOD/ARMO/WEAP property `Step: 0.0 →
+  null` with `Curve Table` appearing is the same 4 bytes read under the newer version, and drives
+  rows "removed and re-added" with identical content; PERK `Data / Trait|Level|Num Ranks` → null
+  with `Unknown` gaining a byte, and effect `Priority` → null; NPC_ `Actor Scaling Info` dropping
+  Level Min/Max/Offset/Offset Global while the Min/Max Globals stay; NPC_ `Weight` float-max →
+  real values and zero-valued `Properties` rows; alias and script-property names re-cased.
 
 **Example:** 20260821→20260903 across 51 unrelated ability spells (e.g. `abDogmeatHealthBonus`
 0x00215CD3); `Area` 100 → 0 on `DetectLifePATargetCloakSpell` (0x00247A41).
-*verified 2026-09-14 vs 20260821/20260903*
+*verified 2026-09-14 vs 20260821/20260903; form-version re-save 2026-10-15 vs 20261015*
 
 ## `Value 2` on a FormID,Int property is never read
 
@@ -397,10 +405,13 @@ Perks granted by an OMOD/ENCH `Perks` property have no PCRD, and `STAT_Beneficia
 include Use Spell List (`0x8`) has a dead own perk list. Some obtainable cards have no PCRD and no reference at all (Lady
 Killer/Black Widow, Critical Banker, Pickpocket, Blitz, Intimidation, I'm Cured!), so an empty
 `refs` never proves a rank ungrantable: call it orphaned only when the card is unobtainable in game.
+A perk referenced only by a QUST `Virtual Machine Adapter` property is applied by script (e.g.
+`CB01_RobotDamagePerk` 0x0029967E from `CB01_Interrogation` 0x0000C06A), so check `refs --paths`
+for VMAD paths too.
 
 **Example:** `LadyKiller01` (0x00019AA3) has zero refs and no `LadyKillerCard` record, while
 `Sneak01` (0x0004C935) resolves to `SneakCard` (0x0034409F).
-*found 2026-09-14; NPC_ perks 2026-09-28*
+*found 2026-09-14; NPC_ perks 2026-09-28; quest scripts 2026-10-15*
 
 ## `lvli_blocked_entry`'s `quantity_zero` on an entry that isn't dead
 

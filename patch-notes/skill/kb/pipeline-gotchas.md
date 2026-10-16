@@ -28,6 +28,9 @@ Mismatch flag is about to say the data has no counterpart.
    `.strings` entries are NUL-terminated, `.dlstrings`/`.ilstrings` u32-length-prefixed. Both
    snapshots ship current tables whether or not they are `Localized`, so this stays valid across a
    flip.
+3. Hand each writer the curve changes in its topic, with the CURV FormID to claim against. A changed
+   file that no CURV record names (`JSON File Path 2`) is dead data: find the record that applies
+   the value instead (pet incoming damage is entry point 36 on the Pet Prowess PERKs).
 
 **Example:** 20260903→20260914, `worldpets/worldpets_petxp_02.json` ×12 at all 42 points (level 100:
 2,900 → 34,800 XP) was the official "Re-balanced Pet XP levels". 20260717→20260724, OMOD
@@ -63,6 +66,30 @@ strings matched that snapshot's own table exactly.
 ---
 
 # Tiering noise: phantom changes that reach DEEP
+
+## A same-branch form-version re-save floods DEEP through the numeric exclusion
+
+When a build re-saves edited records under a newer form version (header 293 → 294), each one also
+carries newer-layout reads (`0.0 → null`, removed-and-re-added rows; see `diff-traps.md`'s
+cross-build entry). `0.0 → null` counts as a numeric delta, so those records stay out of ROLLOUT
+and tier DEEP or AMBIGUOUS, while ROLLOUT itself stays small.
+
+**Symptom:** ROLLOUT under 10K bundles but DEEP and AMBIGUOUS in the high hundreds or more, with
+most DEEP OMOD/PERK/NPC_ rows showing only `Step`/`Curve Table`, `Value 2`, PERK `Data` nulls or
+NPC_ `Weight`.
+**Fix:**
+1. Classify every DEEP and AMBIGUOUS leaf against the cross-build signatures, pairing removed and
+   re-added rows after dropping version-gated keys. A byte-compare of raw subrecords is no
+   shortcut: re-saves also add Enlighten, `FTAG` and empty-string bytes.
+2. Cover churn-only DEEP bundles with one orchestrator `drafts/deep.churn.md` (+ report) listing
+   their FormIDs by signature, and cut them from the summary in `cuts.json`.
+3. Pre-tier churn-only AMBIGUOUS bundles `drop` with the signature as reason, route sibling
+   families (mod boxes, pet challenges) to their topic as `deep`, and give the assessor the rest.
+4. Split the remaining DEEP into topic slices (`work/deep-slice.<topic>.json`).
+
+**Example:** 20260928→20261015, DEEP 831 and AMBIGUOUS 1,474 with ROLLOUT 7,382. 468 DEEP were
+churn-only, 638 AMBIGUOUS dropped, 565 routed by family, 271 assessed; three writers covered 951.
+*found 2026-10-15*
 
 ## An array keyed on an unstable field reports as wholly rewritten
 
@@ -166,10 +193,27 @@ check a snapshot sooner. Non-zero: `esm coverage` shows which SIG rows carry
 `esm/tools/extractor/extract.py`'s `SAFELIST`; anything else is an entry in
 `esm/schema/fo76.overrides.json`) and re-run until clean. `unresolved` counts are missing
 localization, not schema gaps, and never block the gate; `unknown_bytes` counts fields the schema
-itself declares unknown and never blocks it either.
+itself declares unknown and never blocks it either. After the fix, re-run `prepare` with
+`--force-pipeline`: reuse keys on the snapshots and pipeline version, not the decoder, so the stale
+diff would otherwise be reused.
 **Example:** 20260903 (Pets PTS): `unknown_record=7, unmapped=2380` from PGTR and MSCS (new types)
 and RACE `CMDE`/`PGTF`; MSCS needed a `SAFELIST` addition, the rest `fo76.overrides.json` entries.
 *found 2026-09-04*
+
+## The official-notes fetcher keeps only the text before the first `<hr>`
+
+`prepare --official-notes` cuts the article at its first horizontal rule to keep the newest week
+of a stacked page. A fresh article that covers a single week puts its whole body after an intro
+rule, so the cut keeps only navigation and the intro.
+
+**Symptom:** `official_notes: "fetched"` but `work/official-notes.txt` is a few KB of site menu
+and "How to Participate" text.
+**Fix:** download the page into its own scratch directory, run the fetcher module's
+`html_to_text` on it (Python `-I`), and write the span from the article date to the site footer
+into `work/official-notes.txt`. Keep the first-`<hr>` cut for stacked multi-week pages.
+**Example:** 20261015, "Inside the Vault – World Pets and Hideouts Public Test Server": 1.9 KB
+fetched against an 18 KB body after the rule.
+*found 2026-10-15*
 
 ## A schema field rename breaks downstream readers silently
 

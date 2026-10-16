@@ -141,23 +141,25 @@ went Multiply 0.01 → Add 1.0: the official Sneak-bonus fix for six items, none
 ## `STAT_Dmg*` families
 
 - `STAT_DmgVs{Bleeding,Burning,Poisoned,Freezing}`: +X% DBM vs targets in that status; the 4★
-  family (Severing's, Pyromaniac's, Viper's). `STAT_DmgVsFreezing` (0x0085A2F1) has one OMOD
-  consumer, Ice Breaker.
-- `STAT_DmgMult{Cryo,Fire,Poison}`: unconditional elemental DBM. Science! ranks `ScienceMaster01`
-  (Cryologist) and `ScienceExpert01` (Pyro-Technician) fortify Cryo/Fire; nothing reads Poison.
+  family (Severing's, Pyromaniac's, Viper's). `STAT_DmgVsFreezing` (0x0085A2F1) consumers: Ice
+  Breaker and Icemen's (50.0, any weapon).
+- `STAT_DmgMult{Cryo,Fire,Poison,Rad}`: elemental DBM on that damage type only, read by the DMGT's own
+  `Actor Value` (`dtCryo`/`dtFire`/`dtPoison`/`dtRadiationExposure`), so `refs --type PERK` finds
+  no consumer and a weapon without that element gains nothing. Multiply-by-100: an OMOD ADD of 0.3
+  is +30%. Fed by the 2★ Cryologist's/Pyro-Technician's/Poisoner's/HazMat weapon mods and the
+  Science! ranks; `STAT_DmgMultRad` (0x0095B54A) has HazMat (0x004F5776) as its only source.
 - `STAT_DmgThrown` (0x0090F5E4): a `STAT_DamagePerk` Add row (Float 0.01) gated on
   `WeaponTypeThrown`, so 1 point = +1% DBM on thrown weapons; fed only by the Spring Assisted arm
   lining (`_PARENT_mod_Armor_ThrownDamage` 0x0090F5F3, ADD 100.0).
 
 Since 20260710 these replace bespoke ENCH → MGEF → PERK chains on some legendary mods. A blank OMOD
 Description beside a `STAT_*` ADD means the tooltip comes from the AV. Check each mod's old
-implementation: the axis can change, so a `20 → 50` pair across implementations is no comparison,
-and Icemen's never migrated (MUL+ADD `DamageTypeValues` dtCryo 0.2 = +20% base cryo, materializing
-cryo on weapons that lack it).
+implementation: the axis can change, so a `20 → 50` pair across implementations is no comparison
+(Icemen's moved from MUL+ADD `DamageTypeValues` dtCryo 0.2, +20% base cryo, to the Freezing DBM).
 
 **Example:** Severing's, old: ENCH 0x008E0681 → PERK 0x008E0723 "Mod Weapon DMG Bonus Mult" ADD 0.5
 gated on bleed; new: ADD `STAT_DmgVsBleeding` (0x00837DFC) 50.0. Same magnitude.
-*verified 2026-07-14 vs 20260702/20260710; STAT_DmgThrown 2026-09-14 vs 20260914*
+*verified 2026-07-14 vs 20260702/20260710; STAT_DmgThrown 2026-09-14 vs 20260914; elemental AVs 2026-10-15 vs 20261015*
 
 ## Charge weapons (Gauss family)
 
@@ -178,11 +180,13 @@ Power Damage Mult (full-charge bonus +100% → +200%) and +0.5 Full Power Second
 A DMGT names a `Status Build Up Actor Value` and a `Status Spell`. The spell's effects take their
 magnitude from a curve keyed on that AV (`Effects[N].Actor Value` + `Curve Table`), and their
 Conditions decide when the status starts, so one condition edit changes every weapon of that
-damage type.
+damage type. Its `Status Recovery Actor Value` (`StatusRecoveryCryo` 0x0085A234, default 1.0) sets how
+fast build-up drains; NPC_ `Properties` raise it per enemy (Hideout bosses 5.0), and the consumer
+is engine-side, so quote the value, not a rate.
 
 **Example:** `dtCryo` (0x00060A83) → `CryoFreezeSpell` (0x0018C35A): slow/AP drain on curves
 0x0085A237/0x0085A236 keyed on `StatusBuildUpCryo` (0x0085A235), gated at build-up ≥ 60.
-*verified 2026-09-28 vs 20260928*
+*verified 2026-09-28 vs 20260928; recovery AV 2026-10-15 vs 20261015*
 
 ## Shared engine counters live at hardcoded AV slots
 
@@ -195,6 +199,10 @@ bonuses, never the ramp.
 | Bullet Storm | `0x39B` | spending ammo (rate: GMST `uAmmoSpenderAmmoUsePerStack`) |
 | Kill Streak | `0x399` | kills |
 | Onslaught | `0x395` | consecutive hits |
+
+Any low AV FormID with no record, absent from the hardcoded-form table too, is such a slot, so a
+`dangling_ref` lint on one is no broken link: quote the row's math and mark what it counts
+Unconfirmed (`HellcatPerk` 0x0060DBBF: incoming weapon damage × (1 − 0.05 × AV 0x3A3)).
 
 **Bullet Storm.** Cap AVIF `AmmoSpenderMaxStacks` (0x0083C3CB), base 20 = 10 unconditional + 10
 gated on `HasPerk(HeavyGunnerMaster01)`, both on SPEL `AbPerkHeavyGunner` (0x0031BE58) via MGEF
@@ -216,6 +224,17 @@ DBM, Pounder's +10 / +1% DBM, Gunslinger Master +10 / none, Gunslinger Expert +3
 Guerrilla Expert +3 / +1% reload, Guerrilla Master +5 / +5% DBM close range, Whacker Smacker +0 /
 +5% power-attack bonus. Combo-Breaker's is EP79/EP27 (chance to not consume AP), not Onslaught.
 *verified 2026-07-20 vs 20260710 (all 1991 PERK records scanned)*
+
+## `NoRicochet` on a target blocks every deflect and reflect source
+
+The `Mod Ricochet Chance` row on `STAT_BeneficialPerk` (0x0018ADAD `Effects[10]`, AV
+`STAT_DeflectChance` 0x007ACE76) and `LegendaryReflectProjectilePerk` (0x0052BDC6) both require the
+target to lack KYWD `NoRicochet` (0x002049E5). That covers Ricochet, Bullet Storm's deflect, Bullet
+Shield, Old Guard and Reflect Projectiles. Infestation bosses inherit keywords from one template, so
+one template edit flips them all.
+
+**Example:** 20261015, `HTO_Template_Keywords_Boss` (0x0085A3D2) drops `NoRicochet`.
+*verified 2026-10-15 vs 20261015*
 
 ## The Cheat Death revive family shares one cooldown framework
 
@@ -289,6 +308,17 @@ Lieutenant ×1.1). A perk swap on a Hideout enemy is a level-band change: diff t
 Lieutenant (0x008FAE28, 32–71, ×1.1).
 *verified 2026-09-28 vs 20260928*
 
+## Hideout bonus packs are one reward row per bonus stage and tier
+
+`HIDE_QuestReward_GMRW` (0x0094F834) pays one Fallen Deputy's Pack per bonus stage (2000 cache
+badge, 2010 rare-wildcard kill, 3000 boss killed inside `HIDEBonusObjectiveSecondsGlobal`), each
+ANDed with the tier stage (1000/1010/1020/1030 = Basic/Challenging/Lethal/Marked). The quest finds
+the rare by KYWD `HIDE_ActorType_RareWildcard` (0x0094F8E3), so a rare whose Template Flags inherit
+keywords (`0x1000`) from a base without it likely never counts.
+
+**Example:** the Marked pack (0x0094F82D) rows need 1030 plus 2000, 2010 or 3000; loot list 0x0094F838.
+*verified 2026-10-15 vs 20261015*
+
 ---
 
 # Items, crafting & vendors
@@ -336,6 +366,18 @@ it. A mod that removes a keyword its own `Target OMOD Keywords` requires is the 
 `RTSV_Stormslasher_NotBurningMod02` and removes `..._NotBurningMod01`.
 *verified 2026-09-28 vs 20260928*
 
+## Weapon mod boxes take weight, caps and scrap from a tier tag
+
+Weapon `miscmod_*` MISC carry a `Form Tags` tier: `mod_base` 10 caps, `mod_solo` 25, `mod_dual` 50,
+`mod_prime` 100, `mod_special` 500; prime and special weigh 0.5, the rest 0.25. Scrap is one
+component by slot (receiver Copper, barrel/muzzle Steel, grip/stock Rubber, magazine Springs, sight
+Glass) at `ComponentQuantityMedium` (base/solo, 2) or `High` (dual/prime/special, 3). Untagged,
+melee, armor and most power armor boxes keep their own weight and price, so read the tag before
+calling a box an outlier.
+
+**Example:** Laser Gun Beam Splitter (0x00312A4D, `mod_special`): 500 caps, weight 0.5, 3 Steel.
+*verified 2026-10-15 vs 20261015*
+
 ## Resolving a special-currency vendor's price and gate
 
 Follow `refs` from the item to its vendor LVLI tier entry, the CONT/NPC selling it, and that
@@ -358,39 +400,32 @@ Value` → `Econ_GoldVendor_Tier_12` = 2000: "2,000 Gold Bullion", not 15.
 
 # World Pets
 
-## World Pets passives gate on progression-track entries
+## World Pets loot passives run on player-worn buff items; Carrier and Prowess stay on the pet
 
-Each species (Cat/Dog/Deathclaw/Radhog) has two tiered passives built from 3-4 SPEL/PERK/LVLI/GMRW
-rows, each gated on condition function 942 (absent from xEdit's table). Its `Parameter #1` (CIS1)
-is base64 of an 8-byte little-endian PGTR `Entry UID`: decode it, map it to a
-`WorldPets_ProgressionTrack_<species>_NEW` entry, and check each gate's species and tier, since
-some point at another pet's track. Entry UIDs are `1783090000 + 100 × species + entry index` (Cat 0,
-Deathclaw 1, Dog 2, Radhog 3) and base64 is case-sensitive, so one wrong letter lands on another
-species; also read `Comparison Value`, since `== 0.0` on a tier's own entry inverts the gate. Nothing reads a pet level (`WorldPets_PetProwessLevel` 0x00921E47
-and `WorldPets_PetLevelling_Level_*` are unused), and the `WorldPets_ENTM_*_BUFF/PERK_*`
-entitlements and `WorldPets_LvReward_*` GMRWs are `zzz` and empty. Magnitudes sit on `Magnitude`
-GLOBs beside a flat 0.0.
-Pet Prowess by tier: outgoing ×2/×3.5/×5.5/×8, incoming ×0.8/×0.6/×0.4/×0.2. A pet actor gets
-the list at all only through NPC_ `AWPB` → `WorldPets_<Species>BuffList` (FLST of Buff01, Buff02,
-CarryCapacity, PetProwess SPELs); the Pet Prowess PERK rides on NPC_ `Perks[]`. Cross-track gates
-still live: Cat Pet Carrier 1 → Deathclaw entry 9, Dog PC1 → Radhog 9, Deathclaw PC2 → Cat 9,
-Radhog PC2 → Radhog 19, Stimpak Fetcher 2 → Radhog 11; re-decode them each patch.
+A passive's rank-1 track entry grants a GMRW → `WorldPets_Buff_<Name>` ARMO (`ObjectTypePetBuff`,
+untradeable) whose Self ENCH holds the three rank MGEFs, each gated on function 940 (a pet deployed;
+Parameter 1 a species KYWD such as `CampPets_Dog`, null = any) plus function 942 claims on the
+original species' track; reward lists gate on `HasActiveMagicEffect` of the rank MGEF. NPC_ `AWPB`
+→ `WorldPets_<Species>BuffList` keeps only CarryCapacity and PetProwess; the Pet Prowess PERK rides
+on NPC_ `Perks[]` (incoming EP36 ×0.8/×0.67/×0.57/×0.5, outgoing ×2/×3.5/×5.5/×8). Function 942's
+CIS1 is base64 (case-sensitive) of an 8-byte LE PGTR `Entry UID`: map it through the live PGTR, since
+re-IDed entries break the `1783090000 + 100 × species + index` formula, and read `Comparison Value`
+(`== 0.0` inverts). Magnitudes sit on `Magnitude` GLOBs beside a flat 0.0.
 
-**Example:** `WorldPets_CatBuff_Buff01` (0x0093BD1C) CIS1 `UMtHagAAAAA=` → Entry UID 1783090000 =
-Cat track "Baits Finder 1"; `WorldPets_DogBuff_Buff01` (Stimpak Fetcher, 0x0093BD1E)
-`Effects[0].Magnitude` → GLOB `WorldPets_ConsumableBuff_Dog01` (0x008D1875, 2.0).
-*verified 2026-09-14 vs 20260914; UID formula 2026-09-20 vs 20260918; AWPB and gate list 2026-09-28 vs 20260928*
+**Example:** `WorldPets_Buff_Bait_Finder` (0x0095F7B1) → ENCH 0x0095F7B7 `Effects[0]`: 940 == 1 plus Cat entry 0 claimed.
+*verified 2026-10-15 vs 20261015*
 
 ## A World Pets progression track is one PGTR record per species
 
 `WorldPets_ProgressionTrack_<species>_NEW` holds 30 Track Entries keyed by `Level Threshold`
 (formerly `Progress Threshold`), pet level 5 to 200. An entry's authored `Name`/`Description Text`
-says what the tier does; its `VPRR` points at the granted `GMRW`, and its `NAME` points at the
-prerequisite entry's `PGTI`. A second reward slot is the alternate when a cross-track reward (e.g.
+says what the tier does; each `Items[]` entry's `Reward Record` (`VPRR`) points at a granted `GMRW`
+(NAM6 `Item Count` says how many; rank-1 passives add a second item for the buff), and its `NAME`
+points at the prerequisite entry's `PGTI`. A second reward slot is the alternate when a cross-track reward (e.g.
 a Player Icon) was already claimed. RACE `PGTF` links `CAMPPets_<Species>Race` to its track, and
 RACE `Pet Commands` carries a `Command Emote` (`EMOT`) per command. Gift timers share GLOB
 `WorldPets_ConsumableGiftInterval` (0x008B4291, 1801 s).
-*verified 2026-09-14 vs 20260914*
+*verified 2026-09-14 vs 20260914; Items 2026-10-15 vs 20261015*
 
 ## Refs tell whether a snapshot has World Pets switched on
 
@@ -404,8 +439,8 @@ sit in FLST `ATX_HideFromStoreList` (0x004875A1). Check those refs to tell a sna
 An activity-reward passive adds one gated entry per tier to the activity's reward list. A `Use
 First Object That Matches All Conditions` list of 1/2/3-star templates ramps the rank; several
 entries pointing at one shared list with per-tier `Quantity Global`s ramp the count at that list's
-fixed rank. The two read identically in a diff, so check the shape before quoting stars.
+fixed rank. The two read identically in a diff, so check the shape before quoting stars. Each
+tier's entry is gated on `HasActiveMagicEffect` of that passive's rank MGEF.
 
-**Example:** Bounty Sniffer (0x0093D70B) ramps 1→2→3 star; Fun-Festation's entries on
-`HTO_crLLD_Boss` (0x00863220) all point at 3-star-only 0x008FD890 and ramp 1→2→3 items.
-*verified 2026-09-14 vs 20260903*
+**Example:** `Burn_BountyHunt_GruntHunt_LL_BountySnifferRewards` (0x0094B0D4) ramps 1→2→3 star on `WorldPets_BUFF_BountySniffer01/02/03`.
+*verified 2026-10-15 vs 20261015*
