@@ -17,7 +17,15 @@ every one to ground truth. Run all commands from the repo root.
 
   Entries are dated — re-verify stale-looking ones with one live call.
 - **Per-record structured diff** (batch FormIDs in one call):
-  `python3 patch-notes/cli.py extract {OUT} <FORMID> [<FORMID>...]`
+  `just heavy esm python3 patch-notes/cli.py extract {OUT} <FORMID> [<FORMID>...]`
+  — loads the full JSON; batch selectors under the guard instead of repeated small calls.
+  The launcher captures JSON in its printed log path: after exit 0, read/parse that log for
+  the selected records and exact claim paths. Concurrent writers share one heavy slot;
+  exit 75 means wait for the active job and retry the same guarded batch. Resolve other
+  failures; never bypass the guard, guess paths or treat the banner as the diff.
+- **Item audit:** `{ITEM_AUDIT}` — read entries for your assigned DEEP bundles, including
+  verification needed and distinct item deltas to preserve. Other tiers remain the
+  orchestrator's responsibility; this input does not change your slice ownership.
 - **Live verification:**
   - `target/release/esm --esm "{NEW_ESM}" get <id-or-edid> [<id2-or-edid> ...] --resolve stub --pretty`
     — batch every FormID/EditorID you need into ONE call. 2+ selectors return a JSON array
@@ -49,6 +57,10 @@ every one to ground truth. Run all commands from the repo root.
    up) only for mechanics chase doesn't cover: resolve every PERK/ENCH/SPEL/AVIF/KYWD a changed
    property touches until you can state what the change does in player terms. An AVIF's name is
    not its semantics — find its consumer.
+   This includes legendary OMODs with feature prefixes (`*_mod_Legendary_*`), not just
+   unprefixed/custom mods. Inspect all changed members, not only the bundle anchor. A rename
+   arriving with a description, effect, condition or recipe change is not rename-only churn;
+   compare the actual old/new effect chains before calling a description edit a rebalance.
 2. **Plain language first, exact delta second** (style guide's voice rule) — old → new
    wherever the diff alone is ambiguous: batch every changed anchor's before-value into one
    bulk `get` against the OLD esm rather than querying them one at a time. Never round, never
@@ -68,6 +80,16 @@ every one to ground truth. Run all commands from the repo root.
    assert liveness from an EDID prefix alone
    (`zzz_`/`CUT_`/`DEL_`/`POST_` are heuristics); POST_ content goes only under the datamined
    section with the standing disclaimer.
+   `HIDE_` is the Hideouts namespace, not a hidden/cut flag. Recipe learn methods and conditions
+   govern crafting/learning; follow reward and mod-collection references separately before
+   describing acquisition, and distinguish connected future content from released rewards.
+
+5. **Preserve distinct item changes when grouping.** One boss/feature section may cover several
+   bundles, but name every item and explain every meaningful field-level mechanic/acquisition
+   delta; record an evidence-backed inert/no-gameplay-effect reason for discarded deltas.
+   A FormID inventory or “supports the Drifter story” is not a write-up. Churn-only
+   siblings may be grouped with a specific verified no-gameplay-change reason. Apply this
+   distinction to deferrals too: state the actual change the other owner must preserve.
 
 ## CLAIMS — every number you state is a claim record
 
@@ -88,6 +110,9 @@ the run and comes back to you. For every figure in the draft, add one entry to t
 A derived figure (a percentage you computed) may appear in prose only when both inputs are
 claims. FormIDs go in Evidence lines; the coverage gate finds your bundle by its name,
 EditorID, or FormID, so name the item the way the style guide wants and it will be found.
+For numbers found only in a Description, claim the whole old/new Description string and
+label them as tooltip text. Verify the real values through old/new effect chains and claim
+those fields separately before asserting a gameplay change; text alone proves no rebalance.
 
 ## DEFERRALS — do not silently skip
 

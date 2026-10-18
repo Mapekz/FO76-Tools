@@ -152,11 +152,44 @@ whole families of sibling records (one per species, one per grip).
 one sentence across a family.
 **Fix:** before dispatching, group the promoted bundles by story and route siblings of an existing
 writer's story to that writer; give the rest to one extra writer told to write one section per
-story and a single "No gameplay change" line for churn. Tell anything summarised collectively
-but not named individually in `cuts.json` with the section it is folded into.
+story and a single "No gameplay change" line for verified churn. Preserve every meaningful
+item delta by name in the destination prose. A `cuts.json` reason for collective coverage
+must identify the actual section and preserved change, not merely claim family membership.
 **Example:** 20260918→20260928, the assessor promoted 101 of 236 (DEEP 51 → 152); after
 chasing, about a third were condition-pointer churn.
 *found 2026-09-28*
+
+---
+
+# Coverage gaps: real changes the narrative stage can lose
+
+## Detected item changes can disappear behind a passing coverage gate
+
+The gate checks DEEP anchor mentions and nonempty editorial-cut reasons, not whether the prose
+preserves an item's mechanic. BRIEF/ROLLOUT/DROP items have no equivalent semantic coverage check.
+
+**Symptom:** raw changes and DEEP assessment retain a named rebalance, but a supporting-record
+inventory plus a “summarised elsewhere” cut reason lets a feature summary omit it.
+**Fix:** follow `SKILL.md`'s all-tier item audit and verify every destination bullet against its
+actual changes. Repair title-only BRIEF lines from the source changes/assessment. Do not call
+this a diff failure or claim the Python gate enforces the editorial audit.
+**Example:** 20260903→20260914, Brutalist's (0x0080FC2E) keeps its P62→HIDE rename and changed
+STR/PER description in the diff and DEEP tier, but the Drifter summary omits its distinct delta.
+*found 2026-10-18*
+
+## Prefixed legendary mods and DEL transitions need an explicit audit
+
+The OMOD DEEP rule matches unprefixed `mod_Legendary_*`, not `*_mod_Legendary_*`; cut classification
+recognizes `DELETE` but not `DEL_`. The assessor can rescue an item, but those defaults do not.
+
+**Symptom:** an existing legendary effect lands outside DEEP or a `DEL_` rename has `cut: null`;
+an “Other” BRIEF line repeats only the item title and loses the reason it changed.
+**Fix:** inspect both EditorIDs and actual changed fields across all tiers, independent of
+`cut`. Record the disposition in the item audit, preserving verified gameplay changes and
+qualifying naming-only signals. `HIDE_` is the Hideouts namespace, never a hide/cut flag.
+**Example:** 20260903→20260914, Sightseer's (0x00811F96) becomes HIDE-prefixed and changes wording;
+Stagger-Proof (0x007A74C8) becomes DEL-prefixed without a cut classification.
+*found 2026-10-18*
 
 ---
 

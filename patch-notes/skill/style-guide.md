@@ -68,14 +68,19 @@ from game files. It is not live and may change or never ship." POST_/gated conte
 never mixed into live sections.
 
 ## Cut / Vaulted
-Records renamed into zzz_/CUT_/DEL_ this patch. Short, factual, no eulogy.
+Records with corroborating evidence of retirement/disconnection; zzz_/CUT_/DEL_ renames are
+signals to investigate, not proof. `HIDE_` is Hideouts, not hidden/cut. State what the data
+shows and separate it from release status. Short, factual, no eulogy.
 
 ## Also this patch
 The BRIEF one-liners (templated adds/cuts/renames), pruned of anything covered above.
 ```
 
 An item gets its own `###` only if it has enough story to justify one; fold small related
-changes under a shared heading rather than emitting stub sections.
+changes under a shared heading rather than emitting stub sections. Preserve every meaningful
+field-level delta of each named item, or give an evidence-backed inert/no-gameplay-effect
+reason for discarded deltas; generic feature prose or an Evidence inventory does not
+substitute for its change.
 
 ## Discord rendering constraints
 
@@ -97,8 +102,10 @@ splits it into ≤1900-char posts. Concretely, it:
   a chunk) so each Discord post is self-contained and forwardable. Organization beats chunk
   count: a clean 7-8 section-aligned chunks is better than 6 with sections straddling
   boundaries. Chunk count is an outcome, not a target — control length at the summary level.
-- Whole summary: aim for ≤~9,000 chars; hard ceiling ~12,000 chars. When the length target
-  conflicts with category completeness or exact numbers, the numbers and categories win.
+- Whole summary: aim for ≤~9,000 chars; preferred ceiling ~12,000 chars. When the length target
+  conflicts with category completeness, exact numbers, or verified meaningful item changes
+  (including learn methods/conditions without numbers), those changes win. Trim prose and
+  bookkeeping first; length alone is not an omission reason for an item gameplay change.
 - Flagship item section: ≤~1,200 chars. Ordinary item section: ≤~600 chars.
 - When over budget, **cut prose, never numbers.** A shorter story sentence is fine; a dropped
   stat bullet or a rounded number is not.
