@@ -79,6 +79,12 @@ directory. The only output you write under `{OUT}` is the review file named at t
    (`zzz_`/`CUT_`/`DEL_`/`POST_`), or POST_ content outside the datamined section.
    `HIDE_` means Hideouts, not hidden/cut. Check actual learn methods/conditions, reward
    wiring and release evidence before accepting hidden-recipe or current-acquisition claims.
+6. **Acquisition.** Each new obtainable, and each item whose source, odds, price or learn
+   method changed, needs a "How:" line meeting `patch-notes/skill/style-guide.md`'s
+   "Acquisition lines": scrap-learn chance, drop sources with this item's odds, vendor price
+   with currency and reputation rank, and entitlement owner, or a named gap. Spot-check the
+   highest-impact ones live. A field the data holds but the line lacks is `high`; a line that
+   lists a reward table's unchanged entries is `low`.
 
 ## OUTPUT — exactly one file
 

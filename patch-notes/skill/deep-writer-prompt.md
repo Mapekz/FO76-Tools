@@ -84,7 +84,17 @@ every one to ground truth. Run all commands from the repo root.
    govern crafting/learning; follow reward and mod-collection references separately before
    describing acquisition, and distinguish connected future content from released rewards.
 
-5. **Preserve distinct item changes when grouping.** One boss/feature section may cover several
+5. **Chase acquisition for every new obtainable and every changed source, odds, price or
+   learn method** (style guide, "Acquisition lines"; `{MECHANICS_KB}`, "Items, crafting &
+   vendors"). From the recipe COBJ read `Learn Method`, `Learn Recipe From`, `Learn Chance`
+   and any `HasEntitlement`/`HasLearnedRecipe` conditions. For drops, run `refs <item> --type
+   LVLI --paths` (and on its plan BOOK), follow each list up to the event, quest, NPC or
+   container that rolls it, then `walk` that source's list and quote only the item's own row.
+   For vendors, follow the KB's vendor entry to the currency, price and reputation rank. Claim
+   every number; for a `walk` figure, claim the inputs it used (the list's `Count`, the entry's
+   chance-none value or GLOB, a condition's comparison value). A field the data can't answer
+   is named as a gap in the draft, never left out silently.
+6. **Preserve distinct item changes when grouping.** One boss/feature section may cover several
    bundles, but name every item and explain every meaningful field-level mechanic/acquisition
    delta; record an evidence-backed inert/no-gameplay-effect reason for discarded deltas.
    A FormID inventory or “supports the Drifter story” is not a write-up. Churn-only

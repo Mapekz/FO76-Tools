@@ -13,9 +13,10 @@ assembled summary alike.
   text or audio tweaks), then datamined systems, then a dense cosmetics/shop/misc tail.
 - **Full detail on every rework**, including "same numbers, new plumbing" rebuilds —
   the rebuild itself is signal; exceptions (mechanic swaps disguised as re-plumbs) get ⚠️.
-- **Acquisition is a standard field**: every new/changed obtainable gets a "How:" line
-  (recipe ingredients + currency costs, drop table, vendor, event gate). Chase it in the
-  data when the slice doesn't carry it. Enemy-only items say "Not player-obtainable."
+- **Acquisition is a standard field**: every new obtainable, and every item whose source,
+  odds, price or learn method changed, gets a "How:" line ("Acquisition lines" below). Chase
+  it in the data when the slice doesn't carry it. Enemy-only items say "Not
+  player-obtainable."
 - **Unconfirmed lines appear in Discord only when actionable** — keep when a wrong
   assumption could burn a reader (tooltip behavior, damage-zone changes); drop pure schema
   curiosities (they stay in the local summary/reports).
@@ -47,6 +48,31 @@ assembled summary alike.
     when provided) doesn't mention.
   - `⚠️ Mismatch:` — a description or official-notes claim the data contradicts.
   - `Unconfirmed:` — something you could not verify; say exactly what's uncertain.
+
+## Acquisition lines
+
+A "How:" line tells a reader where to get the item and what it costs. Give every path the
+data holds, with its numbers:
+
+- **Crafting:** workbench, ingredients with counts, and currency costs (Legendary Scrip,
+  Legendary Modules).
+- **Learning the recipe:** the plan and its sources; "learned by scrapping the Gauss Shotgun,
+  16.5% per scrap"; or "known by default". Name an entitlement's owner: "Season 27
+  scoreboard reward", "Atomic Shop", "Fallout 1st".
+- **Drops:** each named source (enemy, event, quest, container, Daily Ops tier) with this
+  item's chance per roll or per completion, plus any level, tier or event gate.
+- **Vendors:** vendor, price, currency and reputation rank ("1,000 Gold Bullion from
+  Mortimer at Ally"), plus the rotation when the stock rotates.
+
+Scope it to the changed item. When an item joins an existing list, give that item's source
+and chance, never the list's other entries: "Plan: <item> joins <event>'s reward pick (1 of
+8, 12.5% per completion)". If it dilutes an equal pick, one clause covers the rest: "the
+other seven fall from 14.29% to 12.5%". Give a whole table only when its source is new
+this patch, as one line of items and odds.
+
+When the data can't answer a field, say so in a few words: "Atom price is set server-side",
+"the scoreboard rank isn't in the game files", "no vendor or drop list holds it in this
+build". A path that didn't change can be one word: "(unchanged)".
 
 ## Document structure (single summary doc)
 
@@ -104,8 +130,9 @@ splits it into ≤1900-char posts. Concretely, it:
   boundaries. Chunk count is an outcome, not a target — control length at the summary level.
 - Whole summary: aim for ≤~9,000 chars; preferred ceiling ~12,000 chars. When the length target
   conflicts with category completeness, exact numbers, or verified meaningful item changes
-  (including learn methods/conditions without numbers), those changes win. Trim prose and
-  bookkeeping first; length alone is not an omission reason for an item gameplay change.
+  (including learn methods/conditions without numbers and acquisition lines), those changes
+  win. Trim prose and bookkeeping first; length alone is not an omission reason for an item
+  gameplay change.
 - Flagship item section: ≤~1,200 chars. Ordinary item section: ≤~600 chars.
 - When over budget, **cut prose, never numbers.** A shorter story sentence is fine; a dropped
   stat bullet or a rounded number is not.

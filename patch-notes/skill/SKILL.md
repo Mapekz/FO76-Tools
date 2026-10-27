@@ -248,8 +248,10 @@ in this skill and in writer/reviewer prompts.
 
 Write `work/item-change-audit.md`: one entry per affected item/family with its name, FormIDs,
 bundle ids and tiers, relevant changed fields and before/after values, verification needed,
-and intended owner. Keep fingerprint snapshots in `work/item-change-audit.members.jsonl`
-(a copy of the completed candidate list), not in the Markdown. On resume compare member
+and intended owner. For a new obtainable, or a changed source, odds, price or learn method,
+the entry also lists the acquisition fields to fill (style guide, "Acquisition lines").
+Keep fingerprint snapshots in `work/item-change-audit.members.jsonl` (a copy of the
+completed candidate list), not in the Markdown. On resume compare member
 fingerprints with that snapshot; update the snapshot and audit header only after reconciling
 changed entries. The reviewer compares the header digests with its own enumeration metadata.
 Account for every emitted FormID with an individual or group disposition;
@@ -370,6 +372,12 @@ Read every draft + report. Then, in order:
    the story. True churn-only siblings may share a reason identifying their verified signature;
    do not mechanically rewrite all cuts to a new boilerplate phrase.
 
+   Check every "How:" line against the style guide's "Acquisition lines": scrap-learn chance,
+   drop sources with this item's odds, vendor price with currency and reputation rank, and
+   entitlement owner, wherever the data holds them; a named gap otherwise. Fill what's missing
+   in the orchestrator draft with claims, and trim any line that lists a reward table's
+   unchanged entries down to the changed item.
+
    Read the BRIEF lines against the audit and assessment reasons. Replace title-only lines
    such as “Sightseer's (OMOD): Sightseer's (OMOD)” with the verified change, or omit them
    with a reason in the item audit if they are pure bookkeeping. Never copy hidden/cut/live
@@ -469,6 +477,8 @@ either.
   omission reason. Every meaningful field-level item delta survives story merging or has
   an evidence-backed inert/no-gameplay-effect reason; unresolved mechanics
   are explicitly qualified, never silently treated as bookkeeping.
+- Every new obtainable, and every changed source, odds, price or learn method, has a "How:"
+  line meeting the style guide's "Acquisition lines", scoped to the changed item.
 - Every lint reaching the summary was re-verified live this run.
 - DROP-tier bundles are dropped *with logged reasons* (`triage.json`); the printed summary
   states the drop count so the user can audit `work/triage.json` when something seems missing.
