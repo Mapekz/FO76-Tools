@@ -444,6 +444,18 @@ list turns it into an even pick across every entry: a real change. Adding a cap 
 **Example:** `LLS_Recipes_Mods_PowerArmor_Raider_Tier1` (0x0050EC89) keeps `Max Global` 0x00308435 = 1 and loses `Use All`: the Torso Strength plan every time → each of 5 plans at 20%. `LLS_Scrap_Fertilizer` (0x00432CA5) keeps `Use All` and gains Max Value 0 → 1: 3 Fertilizer plus 10% each for 1 and 2 more → one stack (1 at 10%, 2 at 9%, 3 at 81%).
 *verified 2026-10-27 vs 20261026*
 
+## A collector's `CarryWeight` property caps the weight of what it can produce
+
+A `WorkshopCollectorObject` CONT stores production only up to its `Properties` → `CarryWeight`
+(0x000002DC) value, in pounds; an item heavier than that never fits. The cap sits on the CONT, so a
+change to the production LVLI never shows it in the diff. When a collector's production list gains
+items, compare the heaviest leaf item's weight with the cap; an item over the cap is a
+`⚠️ Mismatch:` and a bug report. Junk-producing Collectron stations use 10.
+**Example:** `ATX_CAMP_Collector_MallSanta` (0x0091A296) caps at 1 but rolls the Toaster (2.5) and
+Life Preserver (3.0); `ATX_CAMP_Collector_TreeOfSpoils` (0x0090B5D3) caps at 1 but rolls Lead Pipe
+(3.0) and ranged weapons.
+*verified 2026-10-27 vs 20261026*
+
 # World Pets
 
 ## World Pets loot passives run on player-worn buff items; Carrier and Prowess stay on the pet

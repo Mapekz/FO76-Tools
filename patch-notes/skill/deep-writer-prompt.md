@@ -70,6 +70,10 @@ every one to ground truth. Run all commands from the repo root.
    - Any Description claim contradicted by the numbers → `⚠️ Mismatch:` bullet.
    - Fetch every anchor's description in ONE bulk `get` call, then compare; assume nothing
      either way.
+   - Any changed output checked against the unchanged record that holds or uses it. A new or
+     changed production, loot or vendor list can break on a field outside the diff, such as a
+     collector's capacity (`{MECHANICS_KB}`, "A collector's `CarryWeight` property caps…").
+     Output that cannot land → `⚠️ Mismatch:` bullet.
 4. **Verify before asserting**: reproduce every lint on your bundles with live `get`s — batch
    all the affected FormIDs for a lint into one bulk call rather than looping — before writing
    it up (irreproducible lints go in the report's `lints_not_reproduced`, never the draft).
