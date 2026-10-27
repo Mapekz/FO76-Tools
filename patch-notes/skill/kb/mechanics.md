@@ -380,6 +380,19 @@ calling a box an outlier.
 **Example:** Laser Gun Beam Splitter (0x00312A4D, `mod_special`): 500 caps, weight 0.5, 3 Steel.
 *verified 2026-10-15 vs 20261015*
 
+## A recipe's COBJ names its learn path and scrap odds
+
+`Learn Method` 1 teaches it on scrapping `Learn Recipe From`, at `Learn Chance` percent per scrap
+(a GLOB: `Learn_Scrap_Chance_Guaranteed_ECON` = 100, legendary shards 1). Method 4 learns from the
+plan BOOK there; chase that BOOK's sources. Method 3 unlocks once `Conditions` pass: `HasEntitlement`
+on an ENTM is an account unlock (a `SCORE_S<N>_` ENTM is Season N's scoreboard reward), and an OR'd
+`HasLearnedRecipe` names the plan alternative. Atom prices and scoreboard ranks are server-side.
+
+**Example:** `co_mod_GaussShotgun_Barrel_Short_HipAccuracy` (0x00949004): scrap the Gauss Shotgun,
+16.5%. Baton grip `co_mod_Melee_Grip_Baton_HeavyHanded` (0x0092B350): S27 ENTM 0x0092C6E1 or plan
+recipe 0x0095A749.
+*verified 2026-10-20 vs 20261015*
+
 ## Resolving a special-currency vendor's price and gate
 
 Follow `refs` from the item to its vendor LVLI tier entry, the CONT/NPC selling it, and that
