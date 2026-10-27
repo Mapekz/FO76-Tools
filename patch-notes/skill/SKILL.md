@@ -77,6 +77,13 @@ their absence changes nothing downstream except the discrepancy callouts.
 A `Localized flag flips` line from the pipeline is expected every few months and needs no
 action; see `kb/pipeline-gotchas.md`.
 
+**Carry-forward.** A previous run's `carry-forward.md` (in `$FO76_DATA_DIR/notes/*_to_<OLD>/`)
+lists stories the user deferred to this run. The diff won't surface them, so the orchestrator
+writes each one: re-verify it against NEW, put it in the orchestrator draft with claims, and
+give it an item-audit disposition. When the user defers a story from this run, or an entry
+can't be covered yet, write it to `$OUT/carry-forward.md`: what to cover and its anchor
+EditorIDs/FormIDs.
+
 **The ROLLOUT tier.** When Bethesda bumps a record's `form_version` they add or drop
 fields across tens of thousands of records at once. That is one story, not tens of
 thousands. Triage groups every changed record by its *change shape* — `(record_type,
