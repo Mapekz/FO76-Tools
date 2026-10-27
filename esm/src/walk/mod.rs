@@ -61,6 +61,13 @@
 //! the output. Sublists are never separate BFS nodes; the tree covers them.
 //! The flat `rows` still recurse fully for `--json` consumers.
 //!
+//! **Resource collectors are checked against their capacity** (see
+//! [`collector`]): a CONT with a `CarryWeight` cap and a RESO producing from
+//! its resource AVIF, at any depth, gets a [`Digest::Collector`] listing
+//! produced items heavier than the cap, and enqueues the produced LVLI. An
+//! LVLI root a RESO produces directly gets the same check against each
+//! collector in [`LvliDigest::collectors`]; a sublist root gets none.
+//!
 //! Every record arrives as a [`Resolved`] tree, so every direct FormID
 //! reference on a fetched record's own fields already carries its typed
 //! FormID and renders as `{"formid", "editor_id", "record_type"}` (the same
@@ -87,9 +94,11 @@
 /// digest structs) — the module is `pub` too so that type is externally
 /// reachable; everything else in it (the allowlist table, the guard enum,
 /// the path walker) stays `pub(crate)`.
+mod collector;
 pub mod level_curves;
 mod render;
 
+pub use collector::{CollectorCheck, ProducedItem};
 pub use render::{render_digest, render_text};
 
 use crate::chase::{
@@ -334,6 +343,10 @@ pub enum Digest {
     /// ARMO: level-keyed curves (Resistances[], durability, condition loss)
     /// plus the trimmed field tree — see [`digest_armo`].
     Armo(ArmoDigest),
+    /// A resource-collector CONT: its production checked against its
+    /// `CarryWeight` cap, plus the trimmed field tree — see
+    /// [`collector::checks_for_container`]. Other CONTs stay `Generic`.
+    Collector(CollectorDigest),
     /// Fallback for every record type without a dedicated digest: the
     /// trimmed field tree (see [`trim_generic_fields`]), not a rigid struct
     /// — this record class is genuinely variable-shape, matching the plan's
@@ -586,6 +599,18 @@ pub struct ExplDigest {
 #[cfg_attr(test, ts(export))]
 pub struct LvliDigest {
     pub table: crate::lvli::DropTable,
+    /// On a walk root a RESO produces: the list checked against each
+    /// collector CONT's `CarryWeight` cap (see [`collector::checks_for_produce`]).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub collectors: Vec<CollectorCheck>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+pub struct CollectorDigest {
+    pub production: Vec<CollectorCheck>,
+    pub generic: GenericDigest,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1345,13 +1370,17 @@ fn digest_expl(fields: &Resolved, level: f32) -> ExplDigest {
 /// LVLI: resolve full drop odds via [`crate::lvli::drop_table`] (pool/`Use
 /// All`/`Use First Match` selection, chance-none, Curve Table evaluation at
 /// `level`, recursion through nested sublists) with a nesting tree
-/// `tree_depth` levels deep, and wrap the result verbatim.
+/// `tree_depth` levels deep, and wrap the result verbatim. With
+/// `check_collectors` (the walk root), also check it against any collector
+/// that produces it.
 fn digest_lvli(
     f: &mut impl RecordSource,
     formid: FormId,
+    editor_id: &str,
     fields: &Resolved,
     level: f32,
     tree_depth: usize,
+    check_collectors: bool,
 ) -> anyhow::Result<LvliDigest> {
     let opts = crate::lvli::DropOptions {
         level,
@@ -1359,7 +1388,12 @@ fn digest_lvli(
         ..Default::default()
     };
     let table = crate::lvli::drop_table(f, formid, fields, &opts)?;
-    Ok(LvliDigest { table })
+    let collectors = if check_collectors {
+        collector::checks_for_produce(f, formid, editor_id, &table.rows)?
+    } else {
+        Vec::new()
+    };
+    Ok(LvliDigest { table, collectors })
 }
 
 // ─── refs digest (root-only, `--refs`) ──────────────────────────────────────
@@ -1419,7 +1453,8 @@ pub fn build_refs_digest(rows: &[RefRow]) -> RefsDigest {
 /// mechanism slice (see [`digest_omod_mechanisms`]) and the KYWD/AVIF root's
 /// own consumer digest (which ignores it — see [`WalkOptions::ref_limit`]).
 /// `remaining_depth` is the hop budget left at this node, which an LVLI
-/// spends on drop-tree nesting.
+/// spends on drop-tree nesting. Only the root LVLI looks for a collector
+/// producing it; a collector root already checks its own list.
 fn digest_node(
     f: &mut impl RecordSource,
     header: &crate::reader::RecordHeaderInfo,
@@ -1427,6 +1462,7 @@ fn digest_node(
     fields: &Resolved,
     opts: &WalkOptions,
     remaining_depth: usize,
+    is_root: bool,
 ) -> anyhow::Result<(Digest, Vec<EnqueueTarget>)> {
     let (sig, formid) = (header.signature.as_str(), header.form_id);
     let (ref_limit, level) = (opts.ref_limit, opts.level);
@@ -1436,9 +1472,11 @@ fn digest_node(
         "LVLI" => Digest::Lvli(digest_lvli(
             f,
             formid,
+            editor_id,
             fields,
             level,
             remaining_depth.max(1),
+            is_root,
         )?),
         "AVIF" => Digest::Avif(digest_avif(f, formid, fields)?),
         "KYWD" => Digest::Kywd(digest_kywd(f, formid)?),
@@ -1477,6 +1515,22 @@ fn digest_node(
                 alternatives,
                 alternatives_total,
             })
+        }
+        "CONT" => {
+            let production = collector::checks_for_container(f, formid, editor_id, fields, level)?;
+            enqueue.extend(
+                production
+                    .iter()
+                    .map(|check| (check.produce_id, "Produce".to_string())),
+            );
+            if production.is_empty() {
+                Digest::Generic(digest_generic(fields))
+            } else {
+                Digest::Collector(CollectorDigest {
+                    production,
+                    generic: digest_generic(fields),
+                })
+            }
         }
         _ => Digest::Generic(digest_generic(fields)),
     };
@@ -1553,6 +1607,7 @@ pub fn walk(
             &fields,
             opts,
             max_depth.saturating_sub(depth),
+            depth == 0,
         )?;
 
         nodes.push(WalkNode {

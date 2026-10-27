@@ -408,6 +408,13 @@ owner/rank gates) — those surface as notes rather than being silently guessed.
   above 100 are normal; one entry is picked in proportion to 1000 − Chance None. `walk` labels the
   node `weighted` and applies this: `ATX_Resources_MallSanta_resource` (0x0091A29B) Nice 900 /
   Naughty 100 → 10% / 90%. Beyond two entries the normalization is unconfirmed and noted.
+- **A resource collector stores only items up to its CONT's `CarryWeight` (in pounds).** The CONT
+  and its production LVLI meet only through reverse refs (CONT `Properties[]` resource AVIF ←
+  RESO `Actor Value`, RESO `Produce` → LVLI), so `walk` on either end does the pairing: a
+  collector CONT lists produced items heavier than the cap and walks the list via `Produce`;
+  the RESO's `Produce` LVLI as root prints the same check per collector. A sublist of it gets
+  no check: walk the CONT. Weight is the base record's, and odds use `--level`. A `CarryWeight` of 0 is unset and not checked. `ATX_CAMP_Collector_MallSanta`
+  (0x0091A296) caps at 1 and flags 4 of its 22 items (Life Preserver 3, Toaster 2.5, …).
 - **Entry-level `Conditions` gate the roll too** — `GetRandomPercent ≤ N` (flat
   or GLOB comparison value) and `HasLearnedRecipe(...) == 0` are the common
   ones. The recipe check is why plan-then-weapon lists hand out the plan first:

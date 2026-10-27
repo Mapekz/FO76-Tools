@@ -8,10 +8,10 @@
 //! compute/sub-concern split in this crate.
 
 use super::{
-    ArmoDigest, AvifDigest, ConsumerGroup, Digest, ExplDigest, GenericDigest, GlobDigest,
-    KywdDigest, LevelCurveRow, LvliDigest, MagicEffectRow, MagicItemDigest, MgefDigest, NpcDigest,
-    OmodDigest, PerkDigest, PerkEffectRow, ProjDigest, RaceDigest, RefsTag, ScriptLeveledList,
-    WalkResult, WeapDigest,
+    ArmoDigest, AvifDigest, CollectorCheck, CollectorDigest, ConsumerGroup, Digest, ExplDigest,
+    GenericDigest, GlobDigest, KywdDigest, LevelCurveRow, LvliDigest, MagicEffectRow,
+    MagicItemDigest, MgefDigest, NpcDigest, OmodDigest, PerkDigest, PerkEffectRow, ProjDigest,
+    RaceDigest, RefsTag, ScriptLeveledList, WalkResult, WeapDigest,
 };
 use crate::chase::{
     Evidence, EvidenceDetail, ExplosionDamage, ExplosionSummary, FetchDirection, Hop, HopKind,
@@ -29,6 +29,9 @@ const CONSUMER_ROWS_SHOWN: usize = 10;
 /// Cap on pretty-printed lines in the generic fallback digest before a
 /// truncation trailer is emitted.
 const GENERIC_DUMP_MAX_LINES: usize = 120;
+
+/// Over-capacity items listed per collector check; the rest are counted.
+const OVER_CAPACITY_ROWS_SHOWN: usize = 15;
 
 // ─── generic value formatting ───────────────────────────────────────────────
 
@@ -821,6 +824,76 @@ fn render_lvli(d: &LvliDigest, lines: &mut Vec<String>) {
             lines.push(format!("    [{}] {}", i + 1, describe_drop_note(note)));
         }
     }
+    for check in &d.collectors {
+        render_collector_check(check, lines);
+    }
+}
+
+/// One collector's capacity check: the container and its cap, the RESO and
+/// list it produces from, then every produced item heavier than the cap.
+fn render_collector_check(check: &CollectorCheck, lines: &mut Vec<String>) {
+    let interval = check
+        .interval
+        .as_ref()
+        .and_then(|g| g.get("Value"))
+        .map(|v| format!("  every {} h", pyish(v)))
+        .unwrap_or_default();
+    lines.push(format!(
+        "collector {}  capacity {} lb (CarryWeight)",
+        fmt_stub(&check.container),
+        pyish(&json!(check.capacity)),
+    ));
+    lines.push(format!(
+        "  produces {} via {}{interval}",
+        fmt_stub(&check.produce),
+        fmt_stub(&check.resource),
+    ));
+    let weighed = check.items - check.unweighed;
+    let unweighed = if check.unweighed > 0 {
+        format!(" ({} items have no weight)", check.unweighed)
+    } else {
+        String::new()
+    };
+    if check.over_capacity.is_empty() {
+        if weighed > 0 {
+            lines.push(format!("  all {weighed} weighed items fit{unweighed}"));
+        } else {
+            lines.push(format!("  no item could be weighed{unweighed}"));
+        }
+        return;
+    }
+    lines.push(format!(
+        "  {} of {weighed} weighed items are heavier than the capacity and are never stored{unweighed}",
+        check.over_capacity.len(),
+    ));
+    let rows: Vec<Vec<String>> = check
+        .over_capacity
+        .iter()
+        .take(OVER_CAPACITY_ROWS_SHOWN)
+        .map(|item| {
+            vec![
+                format!("{} {} {}", item.record_type, item.formid, item.editor_id),
+                pyish(&json!(item.weight)),
+                format!("{:.2}%", item.p_at_least_one * 100.0),
+            ]
+        })
+        .collect();
+    for line in align_table(&["item", "weight", "p(>=1)"], &rows) {
+        lines.push(format!("    {line}"));
+    }
+    if check.over_capacity.len() > OVER_CAPACITY_ROWS_SHOWN {
+        lines.push(format!(
+            "    … {} more",
+            check.over_capacity.len() - OVER_CAPACITY_ROWS_SHOWN
+        ));
+    }
+}
+
+fn render_collector(d: &CollectorDigest, lines: &mut Vec<String>) {
+    for check in &d.production {
+        render_collector_check(check, lines);
+    }
+    render_generic(&d.generic, lines);
 }
 
 /// Numbers each distinct [`crate::lvli::DropNote`] in first-seen order, so a
@@ -1310,6 +1383,7 @@ pub fn render_digest(digest: &Digest) -> Vec<String> {
         Digest::Npc(d) => render_npc(d, &mut lines),
         Digest::Race(d) => render_race(d, &mut lines),
         Digest::Armo(d) => render_armo(d, &mut lines),
+        Digest::Collector(d) => render_collector(d, &mut lines),
         Digest::Generic(d) => render_generic(d, &mut lines),
     }
     lines

@@ -1776,3 +1776,318 @@ fn lvli_with_no_eligible_entries_still_prints_its_list_footnotes() {
         "got:\n{text}"
     );
 }
+
+// ─── collector capacity ─────────────────────────────────────────────────────
+
+const COLLECTOR_CONT_FID: &str = "0x00700100";
+const COLLECTOR_AV_FID: &str = "0x00700101";
+const COLLECTOR_RESO_FID: &str = "0x00700102";
+const COLLECTOR_LVLI_FID: &str = "0x00700103";
+const COLLECTOR_LIGHT_FID: &str = "0x00700104";
+const COLLECTOR_HEAVY_FID: &str = "0x00700105";
+const PLAIN_CONT_FID: &str = "0x00700106";
+
+fn av_property(av: serde_json::Value, value: f64) -> serde_json::Value {
+    json!({"Actor Value": av, "Value": value, "Curve Table": null})
+}
+
+fn ref_list(target: &str, rows: &[(&str, &str, &str)]) -> RefList {
+    RefList {
+        target: target.to_string(),
+        rows: rows
+            .iter()
+            .map(|(formid, rt, edid)| RefRow {
+                form_id: (*formid).to_string(),
+                id: fid(formid),
+                record_type: Some((*rt).to_string()),
+                editor_id: Some((*edid).to_string()),
+                depth: 1,
+                ..Default::default()
+            })
+            .collect(),
+        total: rows.len(),
+        ..Default::default()
+    }
+}
+
+/// A CONT with a 1 lb `CarryWeight` cap whose resource AVIF a RESO
+/// produces from: a pool of a 0.5 lb and a 3 lb item.
+fn collector_fixture() -> MemorySource {
+    let mut f = MemorySource::new();
+    let av =
+        json!({"formid": COLLECTOR_AV_FID, "editor_id": "TestResourceAV", "record_type": "AVIF"});
+    let carry = json!({"formid": "0x000002DC", "editor_id": "CarryWeight", "record_type": "AVIF"});
+    put(
+        &mut f,
+        COLLECTOR_CONT_FID,
+        "CONT",
+        "TestCollector",
+        json!({"Name": "Test Collector", "Properties": [av_property(av.clone(), 1.0), av_property(carry.clone(), 1.0)]}),
+    );
+    put(
+        &mut f,
+        PLAIN_CONT_FID,
+        "CONT",
+        "TestPlainContainer",
+        json!({"Properties": [av_property(carry, 50.0)]}),
+    );
+    put(
+        &mut f,
+        COLLECTOR_AV_FID,
+        "AVIF",
+        "TestResourceAV",
+        json!({}),
+    );
+    put(
+        &mut f,
+        COLLECTOR_RESO_FID,
+        "RESO",
+        "TestResource",
+        json!({
+            "Actor Value": av,
+            "Produce": {"formid": COLLECTOR_LVLI_FID, "editor_id": "TestProduce", "record_type": "LVLI"},
+            "Interval": {"formid": "0x00700107", "editor_id": "TestInterval", "record_type": "GLOB", "Value": 0.5},
+        }),
+    );
+    put(
+        &mut f,
+        COLLECTOR_LVLI_FID,
+        "LVLI",
+        "TestProduce",
+        json!({
+            "Flags": {"value": "0x0", "flags": []},
+            "Leveled List Entries": [
+                lvli_entry(lvli_leaf(COLLECTOR_LIGHT_FID, "MISC", "TestLight")),
+                lvli_entry(lvli_leaf(COLLECTOR_HEAVY_FID, "MISC", "TestHeavy")),
+            ],
+        }),
+    );
+    put(
+        &mut f,
+        COLLECTOR_LIGHT_FID,
+        "MISC",
+        "TestLight",
+        json!({"Data": {"Value": 1, "Weight": 0.5}}),
+    );
+    put(
+        &mut f,
+        COLLECTOR_HEAVY_FID,
+        "MISC",
+        "TestHeavy",
+        json!({"Data": {"Value": 1, "Weight": 3.0}}),
+    );
+    f.insert_refs(
+        fid(COLLECTOR_AV_FID),
+        "RESO",
+        ref_list(
+            COLLECTOR_AV_FID,
+            &[(COLLECTOR_RESO_FID, "RESO", "TestResource")],
+        ),
+    );
+    f.insert_refs(
+        fid(COLLECTOR_LVLI_FID),
+        "RESO",
+        ref_list(
+            COLLECTOR_LVLI_FID,
+            &[(COLLECTOR_RESO_FID, "RESO", "TestResource")],
+        ),
+    );
+    f.insert_refs(
+        fid(COLLECTOR_AV_FID),
+        "CONT",
+        ref_list(
+            COLLECTOR_AV_FID,
+            &[(COLLECTOR_CONT_FID, "CONT", "TestCollector")],
+        ),
+    );
+    f
+}
+
+#[test]
+fn collector_root_flags_items_heavier_than_its_carry_weight() {
+    let mut f = collector_fixture();
+    let result = walk_at(&mut f, COLLECTOR_CONT_FID, 1);
+    let Digest::Collector(d) = &result.nodes[0].digest else {
+        panic!(
+            "expected a collector digest, got {:?}",
+            result.nodes[0].digest
+        );
+    };
+    let [check] = d.production.as_slice() else {
+        panic!("expected one production check");
+    };
+    assert_eq!(check.capacity, 1.0);
+    assert_eq!((check.items, check.unweighed), (2, 0));
+    let over: Vec<_> = check
+        .over_capacity
+        .iter()
+        .map(|i| (i.formid.as_str(), i.weight))
+        .collect();
+    assert_eq!(over, [(COLLECTOR_HEAVY_FID, 3.0)]);
+    assert!((check.over_capacity[0].p_at_least_one - 0.5).abs() < 1e-9);
+
+    let produce = result
+        .nodes
+        .iter()
+        .find(|n| n.formid == COLLECTOR_LVLI_FID)
+        .expect("the produced list is walked");
+    assert_eq!(produce.via.as_deref(), Some("Produce"));
+    let Digest::Lvli(list) = &produce.digest else {
+        panic!("expected an LVLI digest");
+    };
+    assert!(
+        list.collectors.is_empty(),
+        "a non-root list repeats no check"
+    );
+
+    let text = node_digest(&result, COLLECTOR_CONT_FID).join("\n");
+    assert!(
+        text.contains("capacity 1 lb (CarryWeight)")
+            && text.contains("every 0.5 h")
+            && text.contains("1 of 2 weighed items are heavier than the capacity")
+            && text.contains("MISC 0x00700105 TestHeavy"),
+        "got:\n{text}"
+    );
+}
+
+#[test]
+fn produced_list_root_is_checked_against_its_collector() {
+    let mut f = collector_fixture();
+    let result = walk_at(&mut f, COLLECTOR_LVLI_FID, 1);
+    let Digest::Lvli(d) = &result.nodes[0].digest else {
+        panic!("expected an LVLI digest");
+    };
+    let [check] = d.collectors.as_slice() else {
+        panic!("expected one collector check");
+    };
+    assert_eq!(check.container["formid"], COLLECTOR_CONT_FID);
+    assert_eq!(check.over_capacity.len(), 1);
+    let text = node_digest(&result, COLLECTOR_LVLI_FID).join("\n");
+    assert!(
+        text.contains("collector CONT 0x00700100 TestCollector"),
+        "got:\n{text}"
+    );
+}
+
+#[test]
+fn container_without_a_resource_stays_generic() {
+    let mut f = collector_fixture();
+    let result = walk_at(&mut f, PLAIN_CONT_FID, 1);
+    assert!(matches!(result.nodes[0].digest, Digest::Generic(_)));
+}
+
+#[test]
+fn collector_checks_weigh_every_shape_and_dedupe_shared_lists() {
+    let mut f = collector_fixture();
+    // A second RESO producing the same list from the same AVIF.
+    put(
+        &mut f,
+        "0x00700110",
+        "RESO",
+        "TestResourceTwin",
+        json!({
+            "Actor Value": {"formid": COLLECTOR_AV_FID, "editor_id": "TestResourceAV", "record_type": "AVIF"},
+            "Produce": {"formid": COLLECTOR_LVLI_FID, "editor_id": "TestProduce", "record_type": "LVLI"},
+        }),
+    );
+    let resos = [
+        (COLLECTOR_RESO_FID, "RESO", "TestResource"),
+        ("0x00700110", "RESO", "TestResourceTwin"),
+    ];
+    f.insert_refs(
+        fid(COLLECTOR_AV_FID),
+        "RESO",
+        ref_list(COLLECTOR_AV_FID, &resos),
+    );
+    f.insert_refs(
+        fid(COLLECTOR_LVLI_FID),
+        "RESO",
+        ref_list(COLLECTOR_LVLI_FID, &resos),
+    );
+    // Weights at top level (ALCH) and under `Armor Data` (ARMO), plus a
+    // leaf with no weight at all.
+    put(
+        &mut f,
+        COLLECTOR_LVLI_FID,
+        "LVLI",
+        "TestProduce",
+        json!({
+            "Flags": {"value": "0x0", "flags": []},
+            "Leveled List Entries": [
+                lvli_entry(lvli_leaf("0x00700111", "ALCH", "TestDrink")),
+                lvli_entry(lvli_leaf("0x00700112", "ARMO", "TestHat")),
+                lvli_entry(lvli_leaf("0x00700113", "MISC", "TestUnweighed")),
+            ],
+        }),
+    );
+    put(
+        &mut f,
+        "0x00700111",
+        "ALCH",
+        "TestDrink",
+        json!({"Weight": 2.0}),
+    );
+    put(
+        &mut f,
+        "0x00700112",
+        "ARMO",
+        "TestHat",
+        json!({"Armor Data": {"Value": 1, "Weight": 4.0}}),
+    );
+    put(
+        &mut f,
+        "0x00700113",
+        "MISC",
+        "TestUnweighed",
+        json!({"Data": {"Value": 1}}),
+    );
+
+    let result = walk_at(&mut f, COLLECTOR_CONT_FID, 0);
+    let Digest::Collector(d) = &result.nodes[0].digest else {
+        panic!("expected a collector digest");
+    };
+    let [check] = d.production.as_slice() else {
+        panic!(
+            "two RESOs on one list give one check, got {:?}",
+            d.production
+        );
+    };
+    assert_eq!((check.items, check.unweighed), (3, 1));
+    let over: Vec<_> = check
+        .over_capacity
+        .iter()
+        .map(|i| (i.editor_id.as_str(), i.weight))
+        .collect();
+    assert_eq!(over, [("TestHat", 4.0), ("TestDrink", 2.0)]);
+    let text = node_digest(&result, COLLECTOR_CONT_FID).join("\n");
+    assert!(text.contains("(1 items have no weight)"), "got:\n{text}");
+
+    let result = walk_at(&mut f, COLLECTOR_LVLI_FID, 0);
+    let Digest::Lvli(d) = &result.nodes[0].digest else {
+        panic!("expected an LVLI digest");
+    };
+    assert_eq!(d.collectors.len(), 1, "one check per collector");
+}
+
+#[test]
+fn zero_carry_weight_is_unset_and_unchecked() {
+    let mut f = collector_fixture();
+    put(
+        &mut f,
+        COLLECTOR_CONT_FID,
+        "CONT",
+        "TestCollector",
+        json!({"Properties": [
+            av_property(json!({"formid": COLLECTOR_AV_FID, "editor_id": "TestResourceAV", "record_type": "AVIF"}), 1.0),
+            av_property(json!({"formid": "0x000002DC", "editor_id": "CarryWeight", "record_type": "AVIF"}), 0.0),
+        ]}),
+    );
+    let result = walk_at(&mut f, COLLECTOR_CONT_FID, 0);
+    assert!(matches!(result.nodes[0].digest, Digest::Generic(_)));
+    let result = walk_at(&mut f, COLLECTOR_LVLI_FID, 0);
+    let json = serde_json::to_value(&result.nodes[0].digest).unwrap();
+    assert!(
+        json.get("collectors").is_none(),
+        "omitted when empty: {json}"
+    );
+}

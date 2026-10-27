@@ -201,11 +201,16 @@ load-bearing order its module docs list.
 **`src/walk/`** — the sole interactive/human-readable surface (ADR 0001), split compute
 (`mod.rs`) from render (`render.rs`), the same shape `decode/vmad.rs` uses. `walk::walk` does a
 BFS over a `RecordSource` (`src/source.rs`) and computes one typed `Digest` per visited record — `Glob`, `Avif`,
-`Kywd`, `Mgef`, `MagicItem`, `Perk`, `Weap`, `Proj`, `Expl`, `Lvli`, `Omod`, or `Generic` —
+`Kywd`, `Mgef`, `MagicItem`, `Perk`, `Weap`, `Proj`, `Expl`, `Lvli`, `Omod`, `Npc`, `Race`, `Armo`,
+`Collector`, or `Generic` —
 carrying real values (FormID stubs, numbers, classified `chase::Hop`s), never pre-formatted
 strings, so `--json` output is exactly the computed data. `render.rs`'s `render_digest`/
 `render_text` are the only place a `Digest` becomes printed text. An OMOD root's digest embeds
 `chase.rs`'s classified mechanisms directly, sliced to just the gated evidence rows.
+`walk/collector.rs` pairs a resource collector's CONT `CarryWeight` cap with the LVLI its RESO
+produces (the two meet only through reverse refs on the resource AVIF) and flags produced items
+heavier than the cap, from either end: a CONT root's `Collector` digest or an LVLI root's
+`collectors`.
 
 **`src/chase.rs`** — the mechanism-classifier core, and `chase`'s JSON-only, machine-facing
 contract (ADR 0001). `chase::chase` classifies an OMOD's `Data.Properties[]` rows into
