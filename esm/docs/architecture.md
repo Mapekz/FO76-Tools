@@ -216,10 +216,10 @@ new optional fields and enum variants are fine, renames and removals are not, wi
 
 **`src/lvli.rs`** — `lvli::drop_table` recurses a Leveled List's `Entries[]` tree via the same
 `RecordSource` seam, computing per-leaf `DropRow`s (`expected_count`, `p_at_least_one`) under
-`Use All` / `Use First Match` / pool (exact subset enumeration up to 16 entries, else a flagged
-mean-field approximation) selection and flat/GLOB/Curve-Table `Chance None` resolution.
-Anything the model doesn't cover (`Filter Keyword Chances`, `Epic Loot Chance`, list-level `Max
-*`, COED) surfaces as a `DropNote::Unresolved` on the affected row rather than being silently
+`Use All` (with its list cap: the first N entries to roll) / `Use First Match` / pool / weighted
+(exact subset enumeration up to 16 entries, else a flagged mean-field approximation) selection and
+flat/GLOB/Curve-Table `Chance None` resolution.
+Anything the model doesn't cover (`Filter Keyword Chances`, `Epic Loot Chance`, COED) surfaces as a `DropNote::Unresolved` on the affected row rather than being silently
 dropped. With `DropOptions::tree_depth > 0` it also returns `DropTable::tree`, the same odds as
 `DropList`/`DropBranch` nesting cut off at that depth (deeper sublists become subtotal rows);
 `walk` renders only the tree, bounded by its `--depth`, while `rows` stay fully flattened.

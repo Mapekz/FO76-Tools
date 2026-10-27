@@ -363,9 +363,8 @@ roll of the root list:
   its tree row).
 
 The rules below are for reading that output, and for the handful of things it
-deliberately doesn't model (`Filter Keyword Chances`, `Epic Loot Chance`,
-list-level `Max Count`/`Max Global`/`Max Curve Table`, COED owner/rank gates) —
-those surface as notes rather than being silently guessed.
+deliberately doesn't model (`Filter Keyword Chances`, `Epic Loot Chance`, COED
+owner/rank gates) — those surface as notes rather than being silently guessed.
 
 - **A zero `Chance None Value` does not mean "guaranteed" — Chance None,
   Quantity and Minimum Level each have a flat value, a Global and a Curve
@@ -395,6 +394,20 @@ those surface as notes rather than being silently guessed.
   conditions pass, so an entry gated on `GetRandomPercent ≤ 10` genuinely is a
   flat 10%, and later entries are reachable only when every earlier gate fails
   (their true probability is the product of the preceding misses).
+- **A list cap makes `Use All` give the first entries to roll, in list order.** The cap is
+  `Max Value`, `Max Global` (`Container_MaxCount_Single_Tier` 0x00308435 = 1 is the common one), a
+  `Max Curve Table` read at its tier Global, or legacy `Max Count`. Entries roll in order and the
+  list stops once that many have rolled, so a cap of 1 over an unconditioned first entry gives only
+  that entry. `walk` labels the node `Use All, capped at N` and applies it:
+  `LLS_Recipes_Mods_PowerArmor_Raider_Tier1` (0x0050EC89) in 20261015 gives the Torso Strength plan
+  every time. A cap on a pool or first-match list changes nothing (they give one entry anyway). An
+  entry that rolls counts against the cap even if its sublist comes back empty, and whether a cap
+  counts entries or copies on a Quantity above 1 is unconfirmed and noted.
+- **`Weighted Chance None?` (LVLF bit 9, 0x200) makes Chance None a share of 1000.** Each
+  entry's `Chance None Value` (or its Global) is its chance *not* to roll out of 1000, so values
+  above 100 are normal; one entry is picked in proportion to 1000 − Chance None. `walk` labels the
+  node `weighted` and applies this: `ATX_Resources_MallSanta_resource` (0x0091A29B) Nice 900 /
+  Naughty 100 → 10% / 90%. Beyond two entries the normalization is unconfirmed and noted.
 - **Entry-level `Conditions` gate the roll too** — `GetRandomPercent ≤ N` (flat
   or GLOB comparison value) and `HasLearnedRecipe(...) == 0` are the common
   ones. The recipe check is why plan-then-weapon lists hand out the plan first:
@@ -479,7 +492,10 @@ still works for an id with no name at all.
   not from "a COBJ referencing this exists." `Learn Recipe From` is
   polymorphic by `Learn Method`: `4` → the recipe is learned from a plan
   BOOK, `1` → learned from a scrap source (the WEAP/item itself, i.e.
-  self-scrapping teaches it). A `Learn Recipe From` pointing at the dummy
+  self-scrapping teaches it) at `Learn Chance` percent per scrap (a GLOB;
+  `Learn_Scrap_Chance_Guaranteed_ECON` = 100), `3` → known once the COBJ's
+  `Conditions` pass (`HasEntitlement` on an ENTM account unlock, or
+  `HasLearnedRecipe` on a plan's COBJ). A `Learn Recipe From` pointing at the dummy
   MISC `recipe_Dummy_Uncraftable_Item_NOCRAFT` is a field-based "this is
   NOCRAFT" signal — don't treat it as a real learn source. `Repair Method 5`
   is NOT a nocraft signal (common false-positive read). `CUT_`-prefixed

@@ -19,21 +19,30 @@
 //!   subset enumeration up to [`MAX_EXACT_POOL_ENTRIES`] entries, then a
 //!   documented mean-field approximation (flagged [`DropNote::PoolCapped`]).
 //! - **`Use All`**: every entry's gate rolls independently and *all* that
-//!   pass are dispensed — not mutually exclusive with each other.
+//!   pass are dispensed — not mutually exclusive with each other. A list cap
+//!   (see [`MAX_ITEMS`]) stops it at the first N entries that roll, in list
+//!   order: with a cap of 1 and an unconditioned first entry, that entry is
+//!   the only thing the list ever gives.
 //! - **`Use First Object That Matches All Conditions`**: ordered cascade —
 //!   the first entry whose gate passes wins; a lower entry's true odds are
 //!   its own gate times the product of every earlier entry's miss chance.
+//! - **`Weighted Chance None?`** (LVLF bit 9, unnamed in xEdit): one pick out
+//!   of [`WEIGHT_TOTAL`], where each entry's Chance None is its chance *not*
+//!   to roll, so its weight is `WEIGHT_TOTAL − Chance None` (Mall Santa's
+//!   Nice 900 / Naughty 100 → 10% / 90%). Among the entries whose gates pass,
+//!   one is picked in proportion to its weight. Entry Chance None is the
+//!   weight here, never applied again after selection.
 //!
-//! `Chance None` (list- and entry-level) is layered on *after* selection —
-//! it is not one of the CTDA eligibility gates above (see [`entry_chance_none`]).
+//! `Chance None` (list- and entry-level, except entries of a weighted list)
+//! is layered on *after* selection — it is not one of the CTDA eligibility
+//! gates above (see [`entry_chance_none`]).
 //! It, `Quantity` and `Minimum Level` each have a flat value, a Global and a
 //! Curve Table, resolved by one rule ([`resolve_scalar`]).
 //!
 //! ## What isn't modeled (never silently — see [`DropNote::Unresolved`])
 //!
-//! `Filter Keyword Chances` (LLKC), `Epic Loot Chance` (LVSG), list-level
-//! `Max Count`/`Max Global`/`Max Curve Table`, and `Extra Data` (COED)
-//! owner/rank gates. FO76's "does `Calculate from all levels <= player's
+//! `Filter Keyword Chances` (LLKC), `Epic Loot Chance` (LVSG), and
+//! `Extra Data` (COED) owner/rank gates. FO76's "does `Calculate from all levels <= player's
 //! level` being unset collapse multiple qualifying Minimum Level tiers down
 //! to just the top one" behavior (classic in older Bethesda engines) is
 //! flagged unverified rather than assumed — see [`DropOptions::level`].
@@ -61,6 +70,10 @@ pub const MAX_EXACT_POOL_ENTRIES: usize = 16;
 const CALC_ALL_LEVELS: &str = "Calculate from all levels <= player's level";
 const USE_ALL: &str = "Use All";
 const USE_FIRST_MATCH: &str = "Use First Object That Matches All Conditions";
+/// LVLF bit 9 (0x200), named by `schema/fo76.overrides.json`.
+const WEIGHTED: &str = "Weighted Chance None?";
+/// The total a weighted list's entry Chance None values count against.
+pub const WEIGHT_TOTAL: f64 = 1000.0;
 
 /// How a node picks among its entries (see module docs).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -70,6 +83,8 @@ pub enum SelectionModel {
     Pool,
     UseAll,
     UseFirstMatch,
+    /// One pick weighted by `WEIGHT_TOTAL − Chance None` (see module docs).
+    Weighted,
 }
 
 /// A caveat attached to one [`DropRow`] — something about its number that
@@ -91,8 +106,9 @@ pub enum DropNote {
     /// Recursion stopped at [`DropOptions::max_depth`]; the unexpanded
     /// sublist is reported as its own pseudo-row instead.
     DepthCapped,
-    /// More than [`MAX_EXACT_POOL_ENTRIES`] entries in a no-flag pool node —
-    /// odds are a mean-field approximation, not exact subset enumeration.
+    /// More than [`MAX_EXACT_POOL_ENTRIES`] entries in a pool or weighted
+    /// node — odds are a mean-field approximation, not exact subset
+    /// enumeration.
     PoolCapped,
     /// `Quantity != 1` on an entry whose target is itself a sublist: the
     /// expected-count number is exact regardless (linearity of expectation),
@@ -152,6 +168,10 @@ pub struct DropBranch {
 #[cfg_attr(test, ts(export))]
 pub struct DropList {
     pub model: SelectionModel,
+    /// The item cap on a `Use All` list: the first this many entries to roll
+    /// are dispensed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_items: Option<u32>,
     /// Probability one invocation of this list yields nothing.
     pub p_nothing: f64,
     /// Distinct leaf items this list can yield, through every nesting level.
@@ -175,6 +195,9 @@ pub struct DropList {
 #[cfg_attr(test, ts(export))]
 pub struct DropTable {
     pub model: SelectionModel,
+    /// As [`DropList::max_items`], for the root list.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_items: Option<u32>,
     pub level: f32,
     /// Probability this invocation of the root list yields nothing at all.
     pub p_nothing: f64,
@@ -282,6 +305,16 @@ const QUANTITY: ScalarFields = ScalarFields {
     curve: "Quantity Curve Table",
     curve_reads_level: true,
 };
+/// A list's item cap. Only a `Use All` list can exceed one item, so only
+/// there does the cap change anything: entries roll in list order and the
+/// list stops once this many have rolled. A Curve Table is indexed by its
+/// tier Global (`Container_MaxCount_*` with `Container_MaxCount_*_Tier`).
+const MAX_ITEMS: ScalarFields = ScalarFields {
+    flat: "Max Value",
+    global: "Max Global",
+    curve: "Max Curve Table",
+    curve_reads_level: true,
+};
 const MIN_LEVEL: ScalarFields = ScalarFields {
     flat: "Minimum Level",
     global: "Minimum Level Global",
@@ -364,13 +397,38 @@ fn list_chance_none(fields: &Resolved, level: f32, notes: &mut Vec<DropNote>) ->
 /// or the `Base Data.Chance None` u8 on a legacy entry (which has no Global
 /// or curve).
 fn entry_chance_none(entry: &Resolved, level: f32, notes: &mut Vec<DropNote>) -> f64 {
-    percent_to_probability(if is_legacy_entry(entry) {
+    percent_to_probability(entry_chance_none_value(entry, level, notes))
+}
+
+/// An entry's raw Chance None value, before any reading as a percentage.
+fn entry_chance_none_value(entry: &Resolved, level: f32, notes: &mut Vec<DropNote>) -> Option<f64> {
+    if is_legacy_entry(entry) {
         entry
             .pointer("/Base Data/Chance None")
             .and_then(Resolved::as_f64)
     } else {
         resolve_scalar(entry, &CHANCE_NONE, level, notes)
-    })
+    }
+}
+
+/// A weighted list entry's pick weight: [`WEIGHT_TOTAL`] minus its Chance
+/// None, never below zero.
+fn entry_weight(chance_none: Option<f64>) -> f64 {
+    (WEIGHT_TOTAL - chance_none.unwrap_or(0.0)).max(0.0)
+}
+
+/// A list's item cap ([`MAX_ITEMS`], or the legacy `Max Count` u8). `None`
+/// when no source is set or it resolves below one.
+fn resolve_max_items(fields: &Resolved, level: f32, notes: &mut Vec<DropNote>) -> Option<u32> {
+    let value = resolve_scalar(fields, &MAX_ITEMS, level, notes)
+        .filter(|v| *v > 0.0)
+        .or_else(|| fields.get("Max Count").and_then(Resolved::as_f64))?;
+    if value.fract() != 0.0 {
+        notes.push(DropNote::Unresolved {
+            reason: format!("item cap {value} isn't whole; rounded down"),
+        });
+    }
+    (value >= 1.0).then(|| value.floor() as u32)
 }
 
 fn percent_to_probability(percent: Option<f64>) -> f64 {
@@ -433,6 +491,8 @@ fn selection_model(flags: &HashSet<String>) -> SelectionModel {
         SelectionModel::UseAll
     } else if flags.contains(USE_FIRST_MATCH) {
         SelectionModel::UseFirstMatch
+    } else if flags.contains(WEIGHTED) {
+        SelectionModel::Weighted
     } else {
         SelectionModel::Pool
     }
@@ -510,26 +570,33 @@ fn entry_gate_prob(rows: &[Resolved], strict: bool, notes: &mut Vec<DropNote>) -
 /// probability, split evenly among the subset's members. O(2^n) — capped by
 /// [`MAX_EXACT_POOL_ENTRIES`] before calling this.
 fn compute_pool_odds(probs: &[f64]) -> Vec<f64> {
+    compute_weighted_odds(probs, &vec![1.0; probs.len()])
+}
+
+/// [`compute_pool_odds`] with a weight per entry: each passing subset's
+/// joint probability is split in proportion to its members' weights (a
+/// subset whose weights sum to zero picks nothing). Equal weights give the
+/// uniform pool split.
+fn compute_weighted_odds(probs: &[f64], weights: &[f64]) -> Vec<f64> {
     let n = probs.len();
     let mut odds = vec![0.0; n];
     for mask in 1u32..(1u32 << n) {
         let mut p = 1.0;
-        let mut k = 0usize;
-        for (i, prob) in probs.iter().enumerate() {
+        let mut total = 0.0;
+        for (i, (prob, weight)) in probs.iter().zip(weights).enumerate() {
             if mask & (1 << i) != 0 {
                 p *= prob;
-                k += 1;
+                total += weight;
             } else {
                 p *= 1.0 - prob;
             }
         }
-        if p == 0.0 {
+        if p == 0.0 || total <= 0.0 {
             continue;
         }
-        let share = p / k as f64;
         for (i, odd) in odds.iter_mut().enumerate() {
             if mask & (1 << i) != 0 {
-                *odd += share;
+                *odd += p * weights[i] / total;
             }
         }
     }
@@ -540,9 +607,73 @@ fn compute_pool_odds(probs: &[f64]) -> Vec<f64> {
 /// entries — each entry's share of the expected passing-pool size. Flagged
 /// via [`DropNote::PoolCapped`]; not exact subset enumeration.
 fn mean_field_pool_odds(probs: &[f64]) -> Vec<f64> {
-    let s: f64 = probs.iter().sum();
-    let denom = s.max(1.0);
-    probs.iter().map(|p| p / denom).collect()
+    mean_field_weighted_odds(probs, &vec![1.0; probs.len()])
+}
+
+/// [`mean_field_pool_odds`] with a weight per entry: each entry's share of
+/// the expected passing weight, scaled by the chance anything passes (capped
+/// at one expected passing entry). Equal weights reduce to the pool form.
+fn mean_field_weighted_odds(probs: &[f64], weights: &[f64]) -> Vec<f64> {
+    let expected_weight: f64 = probs.iter().zip(weights).map(|(p, w)| p * w).sum();
+    if expected_weight <= 0.0 {
+        return vec![0.0; probs.len()];
+    }
+    let passing = probs.iter().sum::<f64>().min(1.0);
+    probs
+        .iter()
+        .zip(weights)
+        .map(|(p, w)| p * w / expected_weight * passing)
+        .collect()
+}
+
+/// For each entry of a capped `Use All` list, the chance that fewer than
+/// `cap` earlier entries rolled, so it still has room. `rolls` is each
+/// entry's chance to roll (gate and Chance None). Exact: a distribution over
+/// how many entries have rolled so far, in list order.
+fn capped_room(rolls: &[f64], cap: u32) -> Vec<f64> {
+    let cap = cap as usize;
+    // rolled[k] = chance exactly k earlier entries rolled, for k < cap.
+    let mut rolled = vec![0.0; cap];
+    rolled[0] = 1.0;
+    rolls
+        .iter()
+        .map(|&p| {
+            let room: f64 = rolled.iter().sum();
+            for k in (0..cap).rev() {
+                let moved = rolled[k] * p;
+                rolled[k] -= moved;
+                if k + 1 < cap {
+                    rolled[k + 1] += moved;
+                }
+            }
+            room
+        })
+        .collect()
+}
+
+/// The chance a capped `Use All` list yields nothing: no entry rolls, or
+/// every entry that rolled before the cap was reached came back empty.
+/// `entries` pairs each entry's chance to roll with its chance of yielding
+/// nothing once it has.
+fn capped_p_empty(entries: &[(f64, f64)], cap: u32) -> f64 {
+    let cap = cap as usize;
+    // empty[k] = chance k entries rolled so far and none yielded, k < cap;
+    // `full` = the cap was reached and nothing yielded.
+    let mut empty = vec![0.0; cap];
+    empty[0] = 1.0;
+    let mut full = 0.0;
+    for &(p, child_empty) in entries {
+        for k in (0..cap).rev() {
+            let moved = empty[k] * p;
+            empty[k] -= moved;
+            if k + 1 < cap {
+                empty[k + 1] += moved * child_empty;
+            } else {
+                full += moved * child_empty;
+            }
+        }
+    }
+    (empty.iter().sum::<f64>() + full).clamp(0.0, 1.0)
 }
 
 // ─── resolve: one list's entries at a level ─────────────────────────────────
@@ -583,7 +714,10 @@ struct Eligible {
     target: Option<Target>,
     /// Chance its CTDA gate passes.
     gate_prob: f64,
+    /// Chance None applied after selection (0 on a weighted list's entries).
     chance_none: f64,
+    /// Pick weight on a weighted list; 1 otherwise.
+    weight: f64,
     quantity: f64,
     notes: Vec<DropNote>,
 }
@@ -594,6 +728,8 @@ struct ResolvedList {
     model: SelectionModel,
     /// Chance the list-level Chance None lets anything through.
     list_factor: f64,
+    /// The cap on a `Use All` list (see [`MAX_ITEMS`]); `None` elsewhere.
+    max_items: Option<u32>,
     notes: Vec<DropNote>,
     entries: Vec<Eligible>,
     /// Sublists any entry names (eligible or not), for one batched fetch.
@@ -605,13 +741,7 @@ fn resolve_list(fields: &Resolved, opts: &DropOptions) -> ResolvedList {
     let model = selection_model(&flags);
 
     let mut notes: Vec<DropNote> = Vec::new();
-    for key in [
-        "Max Count",
-        "Max Global",
-        "Max Curve Table",
-        "Filter Keyword Chances",
-        "Epic Loot Chance",
-    ] {
+    for key in ["Filter Keyword Chances", "Epic Loot Chance"] {
         if fields.get(key).is_some_and(|v| !v.is_null()) {
             notes.push(DropNote::Unresolved {
                 reason: format!("{key} present on this list — not modeled"),
@@ -637,6 +767,18 @@ fn resolve_list(fields: &Resolved, opts: &DropOptions) -> ResolvedList {
     dedup_sorted(&mut sublists);
 
     let list_factor = 1.0 - list_chance_none(fields, opts.level, &mut notes);
+    let max_items = resolve_max_items(fields, opts.level, &mut notes)
+        .filter(|_| model == SelectionModel::UseAll);
+    if model == SelectionModel::Weighted && entry_vals.len() > 2 {
+        notes.push(DropNote::Unresolved {
+            reason: format!(
+                "weighted list with {} entries: each Chance None is read as its chance not to \
+                 roll out of {WEIGHT_TOTAL}, normalized across the passing entries; the engine \
+                 rule beyond two entries is unconfirmed",
+                entry_vals.len()
+            ),
+        });
+    }
 
     let mut entries = Vec::new();
     let mut min_levels: Vec<i64> = Vec::new();
@@ -652,12 +794,18 @@ fn resolve_list(fields: &Resolved, opts: &DropOptions) -> ResolvedList {
             Some(c) => entry_gate_prob(&flatten_condition_rows(c), opts.strict, &mut entry_notes),
             None => 1.0,
         };
-        let chance_none = entry_chance_none(e, opts.level, &mut entry_notes);
+        let (chance_none, weight) = if model == SelectionModel::Weighted {
+            let value = entry_chance_none_value(e, opts.level, &mut entry_notes);
+            (0.0, entry_weight(value))
+        } else {
+            (entry_chance_none(e, opts.level, &mut entry_notes), 1.0)
+        };
         let quantity = resolve_quantity(e, opts.level, &mut entry_notes);
         entries.push(Eligible {
             target: Target::of(e),
             gate_prob,
             chance_none,
+            weight,
             quantity,
             notes: entry_notes,
         });
@@ -677,9 +825,21 @@ fn resolve_list(fields: &Resolved, opts: &DropOptions) -> ResolvedList {
         }
     }
 
+    if let Some(cap) = max_items
+        && entries.iter().any(|e| e.quantity != 1.0)
+    {
+        notes.push(DropNote::Unresolved {
+            reason: format!(
+                "item cap {cap} counts entries, not copies, and some entries have Quantity \
+                 above 1; which the engine counts is unconfirmed"
+            ),
+        });
+    }
+
     ResolvedList {
         model,
         list_factor,
+        max_items,
         notes,
         entries,
         sublists,
@@ -689,11 +849,25 @@ fn resolve_list(fields: &Resolved, opts: &DropOptions) -> ResolvedList {
 // ─── evaluate: selection odds ───────────────────────────────────────────────
 
 /// The chance each entry is selected under `model`, and whether the pool
-/// odds are a mean-field approximation.
-fn selection_odds(model: SelectionModel, entries: &[Eligible]) -> (Vec<f64>, bool) {
+/// odds are a mean-field approximation. `max_items` caps a `Use All` list.
+fn selection_odds(
+    model: SelectionModel,
+    max_items: Option<u32>,
+    entries: &[Eligible],
+) -> (Vec<f64>, bool) {
     let gates: Vec<f64> = entries.iter().map(|e| e.gate_prob).collect();
     match model {
-        SelectionModel::UseAll => (gates, false),
+        SelectionModel::UseAll => match max_items {
+            Some(cap) => {
+                let rolls: Vec<f64> = entries
+                    .iter()
+                    .map(|e| e.gate_prob * (1.0 - e.chance_none))
+                    .collect();
+                let room = capped_room(&rolls, cap);
+                (gates.iter().zip(room).map(|(g, r)| g * r).collect(), false)
+            }
+            None => (gates, false),
+        },
         SelectionModel::UseFirstMatch => {
             let mut remaining = 1.0;
             let odds = gates
@@ -711,6 +885,14 @@ fn selection_odds(model: SelectionModel, entries: &[Eligible]) -> (Vec<f64>, boo
             (compute_pool_odds(&gates), false)
         }
         SelectionModel::Pool => (mean_field_pool_odds(&gates), true),
+        SelectionModel::Weighted => {
+            let weights: Vec<f64> = entries.iter().map(|e| e.weight).collect();
+            if gates.len() <= MAX_EXACT_POOL_ENTRIES {
+                (compute_weighted_odds(&gates, &weights), false)
+            } else {
+                (mean_field_weighted_odds(&gates, &weights), true)
+            }
+        }
     }
 }
 
@@ -731,6 +913,7 @@ struct NodeResult {
     leaves: HashMap<FormId, LeafAgg>,
     truncated: bool,
     model: SelectionModel,
+    max_items: Option<u32>,
     notes: Vec<DropNote>,
     /// `Some` while tree levels remain (see [`TreeScale`]).
     branches: Option<Vec<DropBranch>>,
@@ -766,6 +949,7 @@ fn into_drop_list(node: &mut NodeResult) -> DropList {
     };
     DropList {
         model: node.model,
+        max_items: node.max_items,
         p_nothing: node.p_empty,
         item_count: node.leaves.len(),
         notes: list_notes,
@@ -847,19 +1031,27 @@ fn walk_node(
     let list = resolve_list(fields, opts);
     let mut node_notes = list.notes;
     let by_fid = bulk_fetch_map(f, &list.sublists)?;
-    let (chosen, mut truncated) = selection_odds(list.model, &list.entries);
+    let (chosen, mut truncated) = selection_odds(list.model, list.max_items, &list.entries);
     if truncated {
         node_notes.push(DropNote::PoolCapped);
     }
     let list_factor = list.list_factor;
 
-    let disjoint = !matches!(list.model, SelectionModel::UseAll);
+    // A Use All list capped at one item gives at most one entry, like a pool.
+    let disjoint = list.model != SelectionModel::UseAll || list.max_items == Some(1);
+    // Per entry of a capped list: its chance to roll and, once it has, of
+    // yielding nothing (1 until a target is reached below).
+    let mut capped_rolls: Vec<(f64, f64)> = list
+        .entries
+        .iter()
+        .map(|e| (e.gate_prob * (1.0 - e.chance_none), 1.0))
+        .collect();
     let mut node_leaves: HashMap<FormId, LeafAgg> = HashMap::new();
     let mut sum_effective_survive = 0.0_f64;
     let mut prod_all_fail = 1.0_f64;
     let mut branches: Vec<DropBranch> = Vec::new();
 
-    for (entry, &chosen_i) in list.entries.iter().zip(&chosen) {
+    for (i, (entry, &chosen_i)) in list.entries.iter().zip(&chosen).enumerate() {
         if chosen_i <= 0.0 {
             continue;
         }
@@ -961,6 +1153,7 @@ fn walk_node(
             });
         }
 
+        capped_rolls[i].1 = child_empty;
         let survive_i = effective_i * (1.0 - child_empty);
         if disjoint {
             sum_effective_survive += survive_i;
@@ -970,7 +1163,9 @@ fn walk_node(
     }
 
     // ─── project: the node's odds, leaves and tree rows ─────────────────────
-    let p_empty_pre_l = if disjoint {
+    let p_empty_pre_l = if let Some(cap) = list.max_items.filter(|&c| c > 1) {
+        capped_p_empty(&capped_rolls, cap)
+    } else if disjoint {
         (1.0 - sum_effective_survive).clamp(0.0, 1.0)
     } else {
         prod_all_fail.clamp(0.0, 1.0)
@@ -1008,6 +1203,7 @@ fn walk_node(
         leaves: node_leaves,
         truncated,
         model: list.model,
+        max_items: list.max_items,
         notes: node_notes,
         branches,
     })
@@ -1022,7 +1218,6 @@ pub fn drop_table(
     fields: &Resolved,
     opts: &DropOptions,
 ) -> anyhow::Result<DropTable> {
-    let model = selection_model(&lvlf_flags(fields));
     let mut path = vec![root_formid];
     let scale = TreeScale {
         levels: opts.tree_depth,
@@ -1052,7 +1247,8 @@ pub fn drop_table(
     });
 
     Ok(DropTable {
-        model,
+        model: result.model,
+        max_items: result.max_items,
         level: opts.level,
         p_nothing: result.p_empty,
         rows,
@@ -1128,6 +1324,27 @@ mod tests {
         let odds = compute_pool_odds(&[1.0, 1.0]);
         assert!((odds[0] - 0.5).abs() < 1e-9);
         assert!((odds[1] - 0.5).abs() < 1e-9);
+    }
+
+    #[test]
+    fn compute_weighted_odds_splits_by_weight_and_reduces_to_the_pool() {
+        let odds = compute_weighted_odds(&[1.0, 1.0], &[100.0, 900.0]);
+        assert!((odds[0] - 0.1).abs() < 1e-9 && (odds[1] - 0.9).abs() < 1e-9);
+        let uniform = compute_weighted_odds(&[0.5, 0.25, 1.0], &[1.0, 1.0, 1.0]);
+        let pool = compute_pool_odds(&[0.5, 0.25, 1.0]);
+        for (a, b) in uniform.iter().zip(&pool) {
+            assert!((a - b).abs() < 1e-12);
+        }
+        assert_eq!(compute_weighted_odds(&[1.0], &[0.0]), vec![0.0]);
+    }
+
+    #[test]
+    fn mean_field_weighted_odds_reduces_to_the_pool_form() {
+        let probs = [0.5, 0.25, 1.0, 0.75];
+        let weighted = mean_field_weighted_odds(&probs, &[1.0; 4]);
+        for (a, b) in weighted.iter().zip(mean_field_pool_odds(&probs)) {
+            assert!((a - b).abs() < 1e-12);
+        }
     }
 
     #[test]
@@ -1450,6 +1667,170 @@ mod tests {
         assert_eq!(table.model, SelectionModel::UseFirstMatch);
         assert!((row(&table, "Recipe").p_at_least_one - 0.10).abs() < 1e-9);
         assert!((row(&table, "Fallback").p_at_least_one - 0.90).abs() < 1e-9);
+    }
+
+    #[test]
+    fn capped_room_tracks_how_many_earlier_entries_rolled() {
+        // Cap 1: each entry has room only if none before it rolled.
+        let room = capped_room(&[1.0, 1.0, 1.0], 1);
+        assert_eq!(room, vec![1.0, 0.0, 0.0]);
+        let room = capped_room(&[0.5, 0.5, 1.0], 1);
+        assert!((room[1] - 0.5).abs() < 1e-12 && (room[2] - 0.25).abs() < 1e-12);
+        // Cap 2: the third entry needs at most one of the first two.
+        let room = capped_room(&[0.5, 0.5, 1.0], 2);
+        assert!((room[2] - 0.75).abs() < 1e-12);
+        // Cap at least the entry count: everything has room.
+        assert_eq!(capped_room(&[0.3, 0.6], 2), vec![1.0, 1.0]);
+    }
+
+    #[test]
+    fn capped_p_empty_counts_a_rolled_empty_sublist_against_the_cap() {
+        // Two certain entries, cap 2: nothing only if both come back empty.
+        assert!((capped_p_empty(&[(1.0, 0.5), (1.0, 0.5)], 2) - 0.25).abs() < 1e-12);
+        // A third certain entry never gets a turn under cap 2.
+        let p = capped_p_empty(&[(1.0, 0.5), (1.0, 0.5), (1.0, 0.0)], 2);
+        assert!((p - 0.25).abs() < 1e-12);
+        // Nothing rolls at all.
+        assert!((capped_p_empty(&[(0.0, 0.0), (0.0, 0.0)], 3) - 1.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn drop_table_capped_use_all_gives_the_first_entries_to_roll() {
+        let mut f = MemorySource::new();
+        let root = FormId::new(0x30);
+        let mut fields = lvli_fields(
+            &["Use All"],
+            vec![
+                entry_ref(target_stub(FormId::new(0x31), "BOOK", "First")),
+                entry_ref(target_stub(FormId::new(0x32), "BOOK", "Second")),
+                entry_ref(target_stub(FormId::new(0x33), "BOOK", "Third")),
+            ],
+        );
+        fields["Max Value"] = json!(0.0);
+        fields["Max Global"] = glob_stub(FormId::new(0x34), "Container_MaxCount_Single_Tier", 1.0);
+        let table = drop_table(&mut f, root, &r(&fields), &DropOptions::default()).unwrap();
+        assert_eq!(table.model, SelectionModel::UseAll);
+        assert_eq!(table.max_items, Some(1));
+        // The first entry always rolls, so it is the only item ever given.
+        assert_eq!(table.rows.len(), 1);
+        assert!((row(&table, "First").p_at_least_one - 1.0).abs() < 1e-9);
+        assert!(table.p_nothing.abs() < 1e-9);
+
+        // Cap 2 by a flat Max Value: the first two, never the third.
+        fields["Max Global"] = Value::Null;
+        fields["Max Value"] = json!(2.0);
+        let table = drop_table(&mut f, root, &r(&fields), &DropOptions::default()).unwrap();
+        assert_eq!(table.max_items, Some(2));
+        assert!((row(&table, "Second").p_at_least_one - 1.0).abs() < 1e-9);
+        assert!(table.rows.iter().all(|r| r.editor_id != "Third"));
+    }
+
+    #[test]
+    fn drop_table_capped_use_all_cascades_through_entry_chance_none() {
+        // LLS_Scrap_Fertilizer's shape: two 90%-Chance-None entries ahead of
+        // a certain one, capped at 1.
+        let mut f = MemorySource::new();
+        let root = FormId::new(0x40);
+        let mut entries = vec![
+            entry_weighted(target_stub(FormId::new(0x41), "MISC", "One"), 90.0),
+            entry_weighted(target_stub(FormId::new(0x42), "MISC", "Two"), 90.0),
+            entry_ref(target_stub(FormId::new(0x43), "MISC", "Three")),
+        ];
+        entries[2]["Leveled List Entry"]["Quantity"] = json!(3.0);
+        let mut fields = lvli_fields(&["Use All"], entries);
+        fields["Max Value"] = json!(1.0);
+        let table = drop_table(&mut f, root, &r(&fields), &DropOptions::default()).unwrap();
+        assert!((row(&table, "One").p_at_least_one - 0.10).abs() < 1e-9);
+        assert!((row(&table, "Two").p_at_least_one - 0.09).abs() < 1e-9);
+        assert!((row(&table, "Three").p_at_least_one - 0.81).abs() < 1e-9);
+        assert!((row(&table, "Three").expected_count - 2.43).abs() < 1e-9);
+        assert!(table.p_nothing.abs() < 1e-9);
+        // Quantity 3 under a cap is the unconfirmed entries-or-copies case.
+        assert!(row(&table, "Three").notes.iter().any(
+            |n| matches!(n, DropNote::Unresolved { reason } if reason.contains("not copies"))
+        ));
+    }
+
+    #[test]
+    fn drop_table_ignores_a_cap_on_lists_that_pick_one() {
+        let mut f = MemorySource::new();
+        let root = FormId::new(0x50);
+        let mut fields = lvli_fields(
+            &[],
+            vec![
+                entry_ref(target_stub(FormId::new(0x51), "BOOK", "A")),
+                entry_ref(target_stub(FormId::new(0x52), "BOOK", "B")),
+            ],
+        );
+        fields["Max Value"] = json!(1.0);
+        let table = drop_table(&mut f, root, &r(&fields), &DropOptions::default()).unwrap();
+        assert_eq!(table.model, SelectionModel::Pool);
+        assert_eq!(table.max_items, None);
+        assert!((row(&table, "A").p_at_least_one - 0.5).abs() < 1e-9);
+    }
+
+    fn entry_weighted(target: Value, chance_none: f64) -> Value {
+        json!({"Leveled List Entry": {
+            "Reference": target,
+            "Chance None Value": chance_none,
+            "Quantity": 1.0,
+            "Minimum Level": 1.0,
+        }})
+    }
+
+    #[test]
+    fn drop_table_weighted_reads_chance_none_as_the_chance_not_to_roll() {
+        // ATX_Resources_MallSanta_resource (0x0091A29B): Nice 900 / Naughty
+        // 100 out of 1000 is Nice 10%, Naughty 90%, and never nothing.
+        let mut f = MemorySource::new();
+        let fields = lvli_fields(
+            &["Weighted Chance None?"],
+            vec![
+                entry_weighted(target_stub(FormId::new(0x31), "MISC", "Nice"), 900.0),
+                entry_weighted(target_stub(FormId::new(0x32), "MISC", "Naughty"), 100.0),
+            ],
+        );
+        let table = drop_table(
+            &mut f,
+            FormId::new(0x30),
+            &r(&fields),
+            &DropOptions::default(),
+        )
+        .unwrap();
+        assert_eq!(table.model, SelectionModel::Weighted);
+        assert!((row(&table, "Nice").p_at_least_one - 0.10).abs() < 1e-9);
+        assert!((row(&table, "Naughty").p_at_least_one - 0.90).abs() < 1e-9);
+        assert!(table.p_nothing.abs() < 1e-9);
+        assert!(row(&table, "Nice").notes.is_empty(), "{table:#?}");
+    }
+
+    #[test]
+    fn drop_table_weighted_beyond_two_entries_notes_the_extrapolation() {
+        let mut f = MemorySource::new();
+        let fields = lvli_fields(
+            &["Weighted Chance None?"],
+            (0..4u32)
+                .map(|i| {
+                    entry_weighted(
+                        target_stub(FormId::new(0x41 + i), "MISC", &format!("E{i}")),
+                        250.0,
+                    )
+                })
+                .collect(),
+        );
+        let table = drop_table(
+            &mut f,
+            FormId::new(0x40),
+            &r(&fields),
+            &DropOptions::default(),
+        )
+        .unwrap();
+        for i in 0..4 {
+            assert!((row(&table, &format!("E{i}")).p_at_least_one - 0.25).abs() < 1e-9);
+        }
+        assert!(row(&table, "E0").notes.iter().any(
+            |n| matches!(n, DropNote::Unresolved { reason } if reason.contains("unconfirmed"))
+        ));
     }
 
     #[test]

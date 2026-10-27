@@ -8,6 +8,11 @@ import type { SelectionModel } from "./SelectionModel";
  */
 export type DropList = { model: SelectionModel, 
 /**
+ * The item cap on a `Use All` list: the first this many entries to roll
+ * are dispensed.
+ */
+max_items?: number | null, 
+/**
  * Probability one invocation of this list yields nothing.
  */
 p_nothing: number, 

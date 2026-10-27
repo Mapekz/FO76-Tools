@@ -1196,7 +1196,7 @@ fn lvli_fixture() -> MemorySource {
         json!({
             "_record_type": "Leveled Item",
             "Flags": {"value": "0x0", "flags": []},
-            "Max Count": 2,
+            "Epic Loot Chance": {"formid": "0x00700098", "editor_id": "TestEpicChance", "record_type": "GLOB", "Value": 5.0},
             "Leveled List Entries": [
                 lvli_entry(lvli_leaf("0x00700022", "WEAP", "NestedWeapon")),
                 lvli_entry(lvli_leaf("0x00700023", "WEAP", "NestedPistol")),
@@ -1378,7 +1378,8 @@ fn lvli_list_wide_note_prints_once_as_a_footnote() {
     let result = walk_at(&mut f, LVLI_SUBLIST_CHILD_FID, 0);
     let text = node_digest(&result, LVLI_SUBLIST_CHILD_FID).join("\n");
     assert_eq!(
-        text.matches("Max Count present on this list").count(),
+        text.matches("Epic Loot Chance present on this list")
+            .count(),
         1,
         "got:\n{text}"
     );
@@ -1387,7 +1388,7 @@ fn lvli_list_wide_note_prints_once_as_a_footnote() {
         "header carries the tag, got:\n{text}"
     );
     assert!(
-        text.contains("[1] Max Count present on this list"),
+        text.contains("[1] Epic Loot Chance present on this list"),
         "got:\n{text}"
     );
 }
@@ -1762,7 +1763,7 @@ fn lvli_with_no_eligible_entries_still_prints_its_list_footnotes() {
         "0x00700090",
         "LVLI",
         "TooHighForLevel50",
-        json!({"Flags": {"value": "0x0", "flags": []}, "Max Count": 1, "Leveled List Entries": [entry]}),
+        json!({"Flags": {"value": "0x0", "flags": []}, "Epic Loot Chance": {"formid": "0x00700098", "editor_id": "TestEpicChance", "record_type": "GLOB", "Value": 5.0}, "Leveled List Entries": [entry]}),
     );
     let result = walk_at(&mut f, "0x00700090", 0);
     let text = node_digest(&result, "0x00700090").join("\n");
@@ -1771,7 +1772,7 @@ fn lvli_with_no_eligible_entries_still_prints_its_list_footnotes() {
         "got:\n{text}"
     );
     assert!(
-        text.contains("list notes 1") && text.contains("[1] Max Count"),
+        text.contains("list notes 1") && text.contains("[1] Epic Loot Chance"),
         "got:\n{text}"
     );
 }

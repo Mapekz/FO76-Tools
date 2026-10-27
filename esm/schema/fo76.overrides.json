@@ -2026,6 +2026,66 @@
           "name": "Layer #16"
         }
       ]
+    },
+    {
+      "record": "LVLI",
+      "op": "replace",
+      "path": [
+        "Flags 2"
+      ],
+      "reason": "LVLF bit 9 (0x200), u16 form only \u2014 live-game data xEdit doesn't name (wbLVLFFlags stops at bit 8 'Is Workshop List'). Lists carrying it treat each entry's Chance None Value as its chance not to roll out of 1000, so values exceed 100: ATX_Resources_MallSanta_resource 0x0091A29B (20261026) Nice 900 / Naughty 100 = 10% / 90%; also Sir Loin Collectron 0x008CD162 650/300/50 and SDOW_LL_SQ01_Junk_Skull 0x008F863A. Name inferred from that use, hence the '?'.",
+      "node": {
+        "kind": "union",
+        "name": "Flags 2",
+        "decider": {
+          "form_version": {
+            "min": 185,
+            "max": null
+          }
+        },
+        "variants": [
+          {
+            "kind": "integer",
+            "name": "Flags",
+            "width": "u8",
+            "signed": false,
+            "format": {
+              "flags": [
+                "Calculate from all levels <= player's level",
+                "Calculate for each item in count",
+                "Use All",
+                "Disable If Nothing",
+                "Item Dispenser",
+                "Do Not Show As Marker",
+                "Use First Object That Matches All Conditions",
+                "Allow Shift Up",
+                "Is Workshop List"
+              ]
+            }
+          },
+          {
+            "kind": "integer",
+            "name": "Flags",
+            "width": "u16",
+            "signed": false,
+            "format": {
+              "flags": [
+                "Calculate from all levels <= player's level",
+                "Calculate for each item in count",
+                "Use All",
+                "Disable If Nothing",
+                "Item Dispenser",
+                "Do Not Show As Marker",
+                "Use First Object That Matches All Conditions",
+                "Allow Shift Up",
+                "Is Workshop List",
+                "Weighted Chance None?"
+              ]
+            }
+          }
+        ],
+        "sig": "LVLF"
+      }
     }
   ]
 }

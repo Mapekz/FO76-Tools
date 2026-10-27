@@ -3,4 +3,4 @@
 /**
  * How a node picks among its entries (see module docs).
  */
-export type SelectionModel = "Pool" | "UseAll" | "UseFirstMatch";
+export type SelectionModel = "Pool" | "UseAll" | "UseFirstMatch" | "Weighted";

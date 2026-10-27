@@ -758,9 +758,26 @@ fn format_damage_row(row: &ExplosionDamage) -> String {
 fn render_lvli(d: &LvliDigest, lines: &mut Vec<String>) {
     let table = &d.table;
     let model_name = match table.model {
-        crate::lvli::SelectionModel::Pool => "pool (pick one, weighted by passing subset)",
-        crate::lvli::SelectionModel::UseAll => "Use All (every passing entry dispensed)",
-        crate::lvli::SelectionModel::UseFirstMatch => "Use First Match (ordered cascade)",
+        crate::lvli::SelectionModel::Pool => {
+            "pool (pick one, weighted by passing subset)".to_string()
+        }
+        crate::lvli::SelectionModel::UseAll => match table.max_items {
+            Some(1) => {
+                "Use All, capped at 1 (entries roll in order; the first to roll is the only item)"
+                    .to_string()
+            }
+            Some(n) => format!(
+                "Use All, capped at {n} (entries roll in order; the first {n} to roll are dispensed)"
+            ),
+            None => "Use All (every passing entry dispensed)".to_string(),
+        },
+        crate::lvli::SelectionModel::UseFirstMatch => {
+            "Use First Match (ordered cascade)".to_string()
+        }
+        crate::lvli::SelectionModel::Weighted => {
+            "weighted (pick one; each Chance None is its chance not to roll out of 1000)"
+                .to_string()
+        }
     };
     let mut footnotes = DropFootnotes::default();
     let list_tags = table
@@ -849,10 +866,14 @@ fn drop_tree_rows(
         let pad = "  ".repeat(indent);
         let (marker, suffix, tags) = match &b.sublist {
             Some(list) => {
-                let model = match list.model {
-                    crate::lvli::SelectionModel::Pool => "pool",
-                    crate::lvli::SelectionModel::UseAll => "Use All",
-                    crate::lvli::SelectionModel::UseFirstMatch => "first match",
+                let model = match (list.model, list.max_items) {
+                    (crate::lvli::SelectionModel::Pool, _) => "pool".to_string(),
+                    (crate::lvli::SelectionModel::UseAll, Some(n)) => {
+                        format!("Use All, first {n} to roll")
+                    }
+                    (crate::lvli::SelectionModel::UseAll, None) => "Use All".to_string(),
+                    (crate::lvli::SelectionModel::UseFirstMatch, _) => "first match".to_string(),
+                    (crate::lvli::SelectionModel::Weighted, _) => "weighted".to_string(),
                 };
                 let items = if list.item_count == 1 {
                     "item"

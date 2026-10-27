@@ -37396,7 +37396,8 @@
                   "Do Not Show As Marker",
                   "Use First Object That Matches All Conditions",
                   "Allow Shift Up",
-                  "Is Workshop List"
+                  "Is Workshop List",
+                  "Weighted Chance None?"
                 ]
               }
             }

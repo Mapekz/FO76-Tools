@@ -7,7 +7,11 @@ import type { SelectionModel } from "./SelectionModel";
  * The result of resolving one LVLI's odds, sorted by `expected_count`
  * descending.
  */
-export type DropTable = { model: SelectionModel, level: number, 
+export type DropTable = { model: SelectionModel, 
+/**
+ * As [`DropList::max_items`], for the root list.
+ */
+max_items?: number | null, level: number, 
 /**
  * Probability this invocation of the root list yields nothing at all.
  */
