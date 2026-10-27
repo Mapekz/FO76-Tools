@@ -202,13 +202,15 @@ bonuses, never the ramp.
 
 Any low AV FormID with no record, absent from the hardcoded-form table too, is such a slot, so a
 `dangling_ref` lint on one is no broken link: quote the row's math and mark what it counts
-Unconfirmed (`HellcatPerk` 0x0060DBBF: incoming weapon damage × (1 − 0.05 × AV 0x3A3)).
+Unconfirmed (`HellcatPerk` 0x0060DBBF reads AV 0x3A3 through CURV `CT_Hellcat_Bonus` 0x0060DF47:
+incoming weapon damage ×0.95/×0.9/×0.85/×0.8 at 0–3).
 
 **Bullet Storm.** Cap AVIF `AmmoSpenderMaxStacks` (0x0083C3CB), base 20 = 10 unconditional + 10
 gated on `HasPerk(HeavyGunnerMaster01)`, both on SPEL `AbPerkHeavyGunner` (0x0031BE58) via MGEF
 0x0083C3D1; floor `AmmoSpenderMinStacks` (0x00919957); per-kill switch `EnableAmmoSpenderOnKill`
 (0x00924DB9, native consumer, its description is authoritative); damage curves
-`Perks\HeavyDamageBonus{,2,3}.json`. Foundation's Vengeance (0x0064781F): +5 max stacks under 25% HP.
+`Perks\HeavyDamageBonus{,2,3}.json`. Foundation's Vengeance (0x0064781F): +5 max stacks at ≤20% HP
+(`GetHealthPercentage <= 0.2` on that SPEL row; its tooltip still says 25%).
 
 **Kill Streak.** +1/kill, cap 10, decays after ~30 s without a kill. Enabled by AVIF
 `EnableKillStreak` (0x0080B56A); `KillStreakPerKillCount` (0x00924E31) adds stacks per kill. Read
@@ -398,6 +400,37 @@ Value` → `Econ_GoldVendor_Tier_12` = 2000: "2,000 Gold Bullion", not 15.
 
 ---
 
+## A mod slot exists only while the weapon or an attached mod lists it
+
+A gun's slot set is the union of its WEAP `Attach Parent Slots` and those of every attached OMOD; a
+mod whose `Attach Point` no one lists cannot attach. When a rework moves slots off a chamber or
+receiver onto the WEAP, diff the old union against the new: a slot dropped from both strands that
+mod family.
+**Example:** Crusader `bospistol` (0x005E6FC0) gains Receiver/Grip/Barrel/Mag while its chambers (e.g. 0x005E6FBE) drop all 8 slots, leaving `ap_gun_Scope` (sights 0x005E6FB7) with no provider.
+*verified 2026-10-26 vs 20261026*
+
+## Reworked guns carry ammo conversion in a Chamber slot
+
+KYWD `ap_gun_Ammo` (0x0094CE5A, "Chamber") holds the ammo-type OMOD apart from the receiver, so stat
+receivers and ammo pair freely. A chamber keeps the old ammo receiver's includes
+(`PARENT_mod_WEAPON_Receiver_AmmoConv_Stronger1`/`Weaker1`, ±0.15 DBM), and the combined stat+ammo
+receivers retire.
+**Example:** LMG `MG42` (0x0007CAB1): `.45 Chamber` 0x00947F7D carries the old Standard .45 Receiver 0x0084CC9E's package.
+*verified 2026-10-26 vs 20261026*
+
+## A capped Use All list gives the first entries to roll, in list order
+
+`Use All` gives every entry its own roll (an entry with no Chance None or `GetRandomPercent` gate
+always rolls). A list cap (`Max Value`, `Max Global` such as `Container_MaxCount_Single_Tier`
+0x00308435 = 1, a `Max Curve Table` read at its tier Global, or legacy `Max Count`) stops the list
+once that many entries have rolled. So `Use All` with a cap of 1 gives the first entry to roll, and
+if that entry always rolls, it is the only item the list ever gives. Clearing `Use All` on such a
+list turns it into an even pick across every entry: a real change. Adding a cap to an uncapped
+`Use All` list turns "every entry" into "the first to roll". `walk` applies the cap
+(`Use All, capped at N`).
+**Example:** `LLS_Recipes_Mods_PowerArmor_Raider_Tier1` (0x0050EC89) keeps `Max Global` 0x00308435 = 1 and loses `Use All`: the Torso Strength plan every time → each of 5 plans at 20%. `LLS_Scrap_Fertilizer` (0x00432CA5) keeps `Use All` and gains Max Value 0 → 1: 3 Fertilizer plus 10% each for 1 and 2 more → one stack (1 at 10%, 2 at 9%, 3 at 81%).
+*verified 2026-10-27 vs 20261026*
+
 # World Pets
 
 ## World Pets loot passives run on player-worn buff items; Carrier and Prowess stay on the pet
@@ -444,3 +477,12 @@ tier's entry is gated on `HasActiveMagicEffect` of that passive's rank MGEF.
 
 **Example:** `Burn_BountyHunt_GruntHunt_LL_BountySnifferRewards` (0x0094B0D4) ramps 1→2→3 star on `WorldPets_BUFF_BountySniffer01/02/03`.
 *verified 2026-10-15 vs 20261015*
+
+## Pet challenges count a pet's kill by its unarmed weapon keyword
+
+A pet CHAL that tests `CHAL_DoesTargetWeaponHaveKeyword(WorldPets_WeaponTypeUnarmed)` (0x008C90FB) on
+Subject counts only kills made with a pet weapon (`crUnarmedWorldPet_<Species>` 0x008E5299–0x008E529C).
+CNDF `WorldPets_PetChallenge_CheckPetActive_Condition_IsPet` (0x008B53A3, function 940) instead
+counts the player's own kills while a pet is out, so swapping one for the other is a difficulty change.
+**Example:** the Fasnacht/Mothman/Festive Scorched "with any Pet" CHALs 0x0095B54D–0x0095B553 move from the CNDF to the keyword test.
+*verified 2026-10-26 vs 20261026*

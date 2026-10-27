@@ -208,6 +208,14 @@ Damage", but its PERK → SPEL → MGEF chain was untouched at 5.0: a text corre
 
 ---
 
+## A string-table change can belong to an INNR naming rule
+
+`search` matches EditorIDs and display names only, so a changed string ID with no named owner may be
+an INNR `Naming Rules[].Ruleset.Names[].Name.Text` (an instance-name prefix) or PGTR reward text.
+Find the owner by scanning the ESM for the little-endian string ID, then claim the decoded field.
+**Example:** string 0x6102b81a "Adpet Dog" is `dn_backpack` (0x0047877F) `Naming Rules[2].Ruleset.Names[121]`.
+*verified 2026-10-26 vs 20261026*
+
 # Semantics traps
 
 ## Leveled-list `Chance None` is inverse
@@ -222,6 +230,15 @@ often summing to a round total; read them as a ratio (`HTO_crLLS_Rewards_Legenda
 **Example:** `UniqueWeaponSkinDropChance` (0x008FF251) 80.0 → 90.0: the skin recipe's odds fell
 20% → 10%.
 *verified 2026-07-22 vs 20260717; weighted variant 2026-08-15 vs 20260814; LVLN 2026-09-20 vs 20260918*
+
+## LVLI flag bit 0x200 weights `Chance None Value` against 1000
+
+A leveled list with flag bit 0x200 (no schema names it; `Flags` decodes as `[]` with `value` 0x200)
+picks one entry from a total of 1000, where each entry's `Chance None Value` is its chance *not* to
+roll, so values above 100 are normal and a high value means a rare entry. `esm walk` labels such a
+list `weighted` and computes the odds; quote them from its output.
+**Example:** `ATX_Resources_MallSanta_resource` (0x0091A29B): Nice 900 → 10%, Naughty 100 → 90%.
+*verified 2026-10-26 vs 20261026*
 
 ## A reward row gated on `GetRandomPercent <=` a 0-valued GLOB was already off
 
@@ -381,6 +398,15 @@ under an instanced quest. The numbers live on VOLI `Intensity`/`Range Factor`.
 QUST `HIDEHideoutQuest` (0x008B2ED0).
 *verified 2026-09-28 vs 20260928*
 
+## World Pets Pet Prowess Damage/Health spells are Pip-Boy display
+
+The `WorldPets_<Species>BuffList` SPELs named Pet Prowess Damage/Health set AVIF
+`WorldPets_PetProwessAttribute01` (0x008E064E), which describes itself as a dummy display value. The
+real numbers live on the NPC_-carried Pet Prowess PERK (EP36 incoming, EP167 outgoing), so a new or
+renamed display SPEL is no rebalance; a health figure restates EP36 as effective HP (×0.8 = +25%).
+**Example:** `WorldPets_DogBuff_PetProwess_Health` (0x00965731) adds GLOBs 0.8/0.6667/0.5714/0.5 while `WorldPets_Dog_PetProwess` (0x008DC2CC) is unchanged.
+*verified 2026-10-26 vs 20261026*
+
 # Lint false positives
 
 ## `desc_changed_stats_same` misses stats that move through a linked GLOB or a swapped include
@@ -407,7 +433,9 @@ Killer/Black Widow, Critical Banker, Pickpocket, Blitz, Intimidation, I'm Cured!
 `refs` never proves a rank ungrantable: call it orphaned only when the card is unobtainable in game.
 A perk referenced only by a QUST `Virtual Machine Adapter` property is applied by script (e.g.
 `CB01_RobotDamagePerk` 0x0029967E from `CB01_Interrogation` 0x0000C06A), so check `refs --paths`
-for VMAD paths too.
+for VMAD paths too. An MGEF `Perk to Apply` grants with no PCRD as well: magazine perks (MGEF
+from the magazine's SPEL/ALCH, e.g. `Magazine_GunsAndBullets07Perk` 0x001EFC29 ← MGEF 0x001EFC28) and
+set/legendary ENCH effects (`HellcatPerk` 0x0060DBBF ← MGEF 0x0060DBBD); `chase <ENCH>` shows the hop.
 
 **Example:** `LadyKiller01` (0x00019AA3) has zero refs and no `LadyKillerCard` record, while
 `Sneak01` (0x0004C935) resolves to `SneakCard` (0x0034409F).
