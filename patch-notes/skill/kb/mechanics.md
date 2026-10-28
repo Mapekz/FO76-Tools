@@ -451,10 +451,12 @@ A `WorkshopCollectorObject` CONT stores production only up to its `Properties` �
 that item can never drop from it. The cap sits on the CONT, so a
 change to the production LVLI never shows it in the diff. When a collector's production list gains
 items, `walk` the CONT or the RESO's `Produce` list (not a sublist of it): it lists every produced
-item heavier than the cap. One is a `⚠️ Mismatch:` and a bug report. Junk-producing Collectron stations use 10.
+item heavier than the cap. One is a `⚠️ Mismatch:` and a bug report, unless it is reached only
+through contextual ammo (`WornHasKeyword` on Target, which `walk` assumes passes): a collector's timed
+roll never yields it. Junk-producing Collectron stations use 10.
 **Example:** `ATX_CAMP_Collector_MallSanta` (0x0091A296) caps at 1 but rolls the Toaster (2.5) and
 Life Preserver (3.0); `ATX_CAMP_Collector_TreeOfSpoils` (0x0090B5D3) caps at 1 but rolls Lead Pipe
-(3.0) and ranged weapons.
+(3.0) and ranged weapons. The Ashforge (0x0033E203, cap 2) rolls a Fusion Core (3) only via contextual ammo.
 *verified 2026-10-27 vs 20261026; per-item cap confirmed in game 2026-10-28*
 
 # World Pets
