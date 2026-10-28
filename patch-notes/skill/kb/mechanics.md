@@ -447,14 +447,15 @@ list turns it into an even pick across every entry: a real change. Adding a cap 
 ## A collector's `CarryWeight` property caps the weight of what it can produce
 
 A `WorkshopCollectorObject` CONT stores production only up to its `Properties` → `CarryWeight`
-(0x000002DC) value, in pounds; an item heavier than that never fits. The cap sits on the CONT, so a
+(0x000002DC) value, in pounds. The cap applies per item: a roll heavier than the cap is never stored, so
+that item can never drop from it. The cap sits on the CONT, so a
 change to the production LVLI never shows it in the diff. When a collector's production list gains
 items, `walk` the CONT or the RESO's `Produce` list (not a sublist of it): it lists every produced
 item heavier than the cap. One is a `⚠️ Mismatch:` and a bug report. Junk-producing Collectron stations use 10.
 **Example:** `ATX_CAMP_Collector_MallSanta` (0x0091A296) caps at 1 but rolls the Toaster (2.5) and
 Life Preserver (3.0); `ATX_CAMP_Collector_TreeOfSpoils` (0x0090B5D3) caps at 1 but rolls Lead Pipe
 (3.0) and ranged weapons.
-*verified 2026-10-27 vs 20261026*
+*verified 2026-10-27 vs 20261026; per-item cap confirmed in game 2026-10-28*
 
 # World Pets
 
