@@ -403,11 +403,11 @@ owner/rank gates) — those surface as notes rather than being silently guessed.
   every time. A cap on a pool or first-match list changes nothing (they give one entry anyway). An
   entry that rolls counts against the cap even if its sublist comes back empty, and whether a cap
   counts entries or copies on a Quantity above 1 is unconfirmed and noted.
-- **`Weighted Chance None?` (LVLF bit 9, 0x200) makes Chance None a share of 1000.** Each
-  entry's `Chance None Value` (or its Global) is its chance *not* to roll out of 1000, so values
-  above 100 are normal; one entry is picked in proportion to 1000 − Chance None. `walk` labels the
-  node `weighted` and applies this: `ATX_Resources_MallSanta_resource` (0x0091A29B) Nice 900 /
-  Naughty 100 → 10% / 90%. Beyond two entries the normalization is unconfirmed and noted.
+- **`Weighted Chance None?` (LVLF bit 9, 0x200) makes each entry's Chance None
+  value its selection weight.** Divide each weight by the sum of eligible entry
+  weights. `ATX_Resources_AbandonedNest_resource` has four weights of 240 and
+  an egg weight of 40: 24% for each scrap and 4% for the egg. The rule is inferred from list
+  shapes, not confirmed against the engine.
 - **A resource collector stores only items up to its CONT's `CarryWeight` (in pounds).** The CONT
   and its production LVLI meet only through reverse refs (CONT `Properties[]` resource AVIF ←
   RESO `Actor Value`, RESO `Produce` → LVLI), so `walk` on either end does the pairing: a

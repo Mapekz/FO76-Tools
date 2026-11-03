@@ -778,8 +778,7 @@ fn render_lvli(d: &LvliDigest, lines: &mut Vec<String>) {
             "Use First Match (ordered cascade)".to_string()
         }
         crate::lvli::SelectionModel::Weighted => {
-            "weighted (pick one; each Chance None is its chance not to roll out of 1000)"
-                .to_string()
+            "weighted (pick one; each Chance None value is its weight)".to_string()
         }
     };
     let mut footnotes = DropFootnotes::default();

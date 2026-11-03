@@ -26,12 +26,10 @@
 //! - **`Use First Object That Matches All Conditions`**: ordered cascade —
 //!   the first entry whose gate passes wins; a lower entry's true odds are
 //!   its own gate times the product of every earlier entry's miss chance.
-//! - **`Weighted Chance None?`** (LVLF bit 9, unnamed in xEdit): one pick out
-//!   of [`WEIGHT_TOTAL`], where each entry's Chance None is its chance *not*
-//!   to roll, so its weight is `WEIGHT_TOTAL − Chance None` (Mall Santa's
-//!   Nice 900 / Naughty 100 → 10% / 90%). Among the entries whose gates pass,
-//!   one is picked in proportion to its weight. Entry Chance None is the
-//!   weight here, never applied again after selection.
+//! - **`Weighted Chance None?`** (LVLF bit 9, unnamed in xEdit): each
+//!   entry's Chance None value is its pick weight. Among eligible entries,
+//!   one is selected in proportion to that value. Inferred from list shapes
+//!   (Abandoned Nest: 240 ×4, 40), not confirmed against the engine.
 //!
 //! `Chance None` (list- and entry-level, except entries of a weighted list)
 //! is layered on *after* selection — it is not one of the CTDA eligibility
@@ -72,8 +70,6 @@ const USE_ALL: &str = "Use All";
 const USE_FIRST_MATCH: &str = "Use First Object That Matches All Conditions";
 /// LVLF bit 9 (0x200), named by `schema/fo76.overrides.json`.
 const WEIGHTED: &str = "Weighted Chance None?";
-/// The total a weighted list's entry Chance None values count against.
-pub const WEIGHT_TOTAL: f64 = 1000.0;
 
 /// How a node picks among its entries (see module docs).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -83,7 +79,7 @@ pub enum SelectionModel {
     Pool,
     UseAll,
     UseFirstMatch,
-    /// One pick weighted by `WEIGHT_TOTAL − Chance None` (see module docs).
+    /// One pick weighted by the entry Chance None value (see module docs).
     Weighted,
 }
 
@@ -411,10 +407,9 @@ fn entry_chance_none_value(entry: &Resolved, level: f32, notes: &mut Vec<DropNot
     }
 }
 
-/// A weighted list entry's pick weight: [`WEIGHT_TOTAL`] minus its Chance
-/// None, never below zero.
+/// A weighted list entry's pick weight, never below zero.
 fn entry_weight(chance_none: Option<f64>) -> f64 {
-    (WEIGHT_TOTAL - chance_none.unwrap_or(0.0)).max(0.0)
+    chance_none.unwrap_or(0.0).max(0.0)
 }
 
 /// A list's item cap ([`MAX_ITEMS`], or the legacy `Max Count` u8). `None`
@@ -769,16 +764,6 @@ fn resolve_list(fields: &Resolved, opts: &DropOptions) -> ResolvedList {
     let list_factor = 1.0 - list_chance_none(fields, opts.level, &mut notes);
     let max_items = resolve_max_items(fields, opts.level, &mut notes)
         .filter(|_| model == SelectionModel::UseAll);
-    if model == SelectionModel::Weighted && entry_vals.len() > 2 {
-        notes.push(DropNote::Unresolved {
-            reason: format!(
-                "weighted list with {} entries: each Chance None is read as its chance not to \
-                 roll out of {WEIGHT_TOTAL}, normalized across the passing entries; the engine \
-                 rule beyond two entries is unconfirmed",
-                entry_vals.len()
-            ),
-        });
-    }
 
     let mut entries = Vec::new();
     let mut min_levels: Vec<i64> = Vec::new();
@@ -800,6 +785,17 @@ fn resolve_list(fields: &Resolved, opts: &DropOptions) -> ResolvedList {
         } else {
             (entry_chance_none(e, opts.level, &mut entry_notes), 1.0)
         };
+        if model == SelectionModel::Weighted && weight <= 0.0 {
+            // Never selectable: keep it out of the pool (it must not inflate
+            // the approximation's passing factor) but keep what it could not
+            // resolve on the list, since it has no row to carry the notes.
+            for n in entry_notes {
+                if !notes.contains(&n) {
+                    notes.push(n);
+                }
+            }
+            continue;
+        }
         let quantity = resolve_quantity(e, opts.level, &mut entry_notes);
         entries.push(Eligible {
             target: Target::of(e),
@@ -1779,9 +1775,9 @@ mod tests {
     }
 
     #[test]
-    fn drop_table_weighted_reads_chance_none_as_the_chance_not_to_roll() {
+    fn drop_table_weighted_uses_chance_none_as_weight() {
         // ATX_Resources_MallSanta_resource (0x0091A29B): Nice 900 / Naughty
-        // 100 out of 1000 is Nice 10%, Naughty 90%, and never nothing.
+        // 100 out of 1000 is Nice 90%, Naughty 10%, and never nothing.
         let mut f = MemorySource::new();
         let fields = lvli_fields(
             &["Weighted Chance None?"],
@@ -1798,25 +1794,86 @@ mod tests {
         )
         .unwrap();
         assert_eq!(table.model, SelectionModel::Weighted);
-        assert!((row(&table, "Nice").p_at_least_one - 0.10).abs() < 1e-9);
-        assert!((row(&table, "Naughty").p_at_least_one - 0.90).abs() < 1e-9);
+        assert!((row(&table, "Nice").p_at_least_one - 0.90).abs() < 1e-9);
+        assert!((row(&table, "Naughty").p_at_least_one - 0.10).abs() < 1e-9);
         assert!(table.p_nothing.abs() < 1e-9);
         assert!(row(&table, "Nice").notes.is_empty(), "{table:#?}");
     }
 
     #[test]
-    fn drop_table_weighted_beyond_two_entries_notes_the_extrapolation() {
+    fn drop_table_weighted_ignores_zero_weight_entries_past_the_exact_cutoff() {
+        // One gated weight-240 entry behind sixteen unselectable siblings must
+        // stay as unlikely as its gate, not read as a guarantee.
+        let mut f = MemorySource::new();
+        let mut entries = vec![entry_ref_gated(
+            target_stub(FormId::new(0x41), "MISC", "Gated"),
+            "Less Than Or Equal To",
+            10.0,
+        )];
+        entries[0]["Leveled List Entry"]["Chance None Value"] = json!(240.0);
+        for i in 0..16u32 {
+            entries.push(entry_weighted(
+                target_stub(FormId::new(0x50 + i), "MISC", &format!("Zero{i}")),
+                0.0,
+            ));
+        }
+        let fields = lvli_fields(&["Weighted Chance None?"], entries);
+        let table = drop_table(
+            &mut f,
+            FormId::new(0x40),
+            &r(&fields),
+            &DropOptions::default(),
+        )
+        .unwrap();
+        let p = row(&table, "Gated").p_at_least_one;
+        assert!(p < 0.5, "gated reward inflated to {p}");
+        assert!(table.rows.iter().all(|r| !r.editor_id.starts_with("Zero")));
+    }
+
+    #[test]
+    fn drop_table_weighted_keeps_notes_of_an_unresolved_zero_weight_entry() {
+        let mut f = MemorySource::new();
+        let mut entry = entry_weighted(target_stub(FormId::new(0x41), "MISC", "Lost"), 0.0);
+        entry["Leveled List Entry"]["Chance None Global"] = json!({
+            "formid": FormId::new(0x1000).display(),
+            "editor_id": "NoValue",
+            "record_type": "GLOB",
+        });
+        let fields = lvli_fields(&["Weighted Chance None?"], vec![entry]);
+        let table = drop_table(
+            &mut f,
+            FormId::new(0x40),
+            &r(&fields),
+            &DropOptions {
+                tree_depth: 1,
+                ..DropOptions::default()
+            },
+        )
+        .unwrap();
+        assert!(
+            table
+                .tree
+                .as_ref()
+                .expect("tree")
+                .notes
+                .iter()
+                .any(|n| matches!(n, DropNote::Unresolved { .. })),
+            "{table:#?}"
+        );
+    }
+
+    #[test]
+    fn drop_table_weighted_abandoned_nest() {
         let mut f = MemorySource::new();
         let fields = lvli_fields(
             &["Weighted Chance None?"],
-            (0..4u32)
-                .map(|i| {
-                    entry_weighted(
-                        target_stub(FormId::new(0x41 + i), "MISC", &format!("E{i}")),
-                        250.0,
-                    )
-                })
-                .collect(),
+            vec![
+                entry_weighted(target_stub(FormId::new(0x41), "MISC", "Acid"), 240.0),
+                entry_weighted(target_stub(FormId::new(0x42), "MISC", "Antiseptic"), 240.0),
+                entry_weighted(target_stub(FormId::new(0x43), "MISC", "Leather"), 240.0),
+                entry_weighted(target_stub(FormId::new(0x44), "MISC", "Bone"), 240.0),
+                entry_weighted(target_stub(FormId::new(0x45), "ALCH", "Egg"), 40.0),
+            ],
         );
         let table = drop_table(
             &mut f,
@@ -1825,12 +1882,11 @@ mod tests {
             &DropOptions::default(),
         )
         .unwrap();
-        for i in 0..4 {
-            assert!((row(&table, &format!("E{i}")).p_at_least_one - 0.25).abs() < 1e-9);
+        for name in ["Acid", "Antiseptic", "Leather", "Bone"] {
+            assert!((row(&table, name).p_at_least_one - 0.24).abs() < 1e-9);
         }
-        assert!(row(&table, "E0").notes.iter().any(
-            |n| matches!(n, DropNote::Unresolved { reason } if reason.contains("unconfirmed"))
-        ));
+        assert!((row(&table, "Egg").p_at_least_one - 0.04).abs() < 1e-9);
+        assert!(table.p_nothing.abs() < 1e-9);
     }
 
     #[test]

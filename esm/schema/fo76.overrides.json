@@ -2033,7 +2033,7 @@
       "path": [
         "Flags 2"
       ],
-      "reason": "LVLF bit 9 (0x200), u16 form only \u2014 live-game data xEdit doesn't name (wbLVLFFlags stops at bit 8 'Is Workshop List'). Lists carrying it treat each entry's Chance None Value as its chance not to roll out of 1000, so values exceed 100: ATX_Resources_MallSanta_resource 0x0091A29B (20261026) Nice 900 / Naughty 100 = 10% / 90%; also Sir Loin Collectron 0x008CD162 650/300/50 and SDOW_LL_SQ01_Junk_Skull 0x008F863A. Name inferred from that use, hence the '?'.",
+      "reason": "LVLF bit 9 (0x200), u16 form only \u2014 live-game data xEdit doesn't name (wbLVLFFlags stops at bit 8 'Is Workshop List'). Lists carrying it treat each entry's Chance None Value as its selection weight: ATX_Resources_AbandonedNest_resource 0x008F84FA has four weights of 240 and an egg weight of 40 (weighting inferred from list shapes, not engine-confirmed). Name inferred from that use, hence the '?'.",
       "node": {
         "kind": "union",
         "name": "Flags 2",

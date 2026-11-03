@@ -223,7 +223,7 @@ Find the owner by scanning the ESM for the little-endian string ID, then claim t
 A LVLI entry's `Chance None Value`/`Chance None Global` is the percent chance of **nothing**; the
 item's odds are `100 − Chance None`, so a feeding GLOB going **up** is a **nerf**. Exception: when
 sibling entries each carry their own `Chance None Global` and the list's `Use All` flag is cleared
-(replaced by an undecoded bit such as `0x200`), the globals are relative weights for one pick,
+(replaced by the `Weighted Chance None?` bit, `0x200`), the globals are relative weights for one pick,
 often summing to a round total; read them as a ratio (`HTO_crLLS_Rewards_Legendary_Mob_Weapons_Melee`
 0x008F2B1A: 470/330/200). LVLN lists do the same (`HIDE_LChar_RobotWildcard` 0x0094F8E4: 85/15).
 
@@ -231,14 +231,17 @@ often summing to a round total; read them as a ratio (`HTO_crLLS_Rewards_Legenda
 20% → 10%.
 *verified 2026-07-22 vs 20260717; weighted variant 2026-08-15 vs 20260814; LVLN 2026-09-20 vs 20260918*
 
-## LVLI flag bit 0x200 weights `Chance None Value` against 1000
+## LVLI flag bit 0x200 makes `Chance None Value` a selection weight
 
-A leveled list with flag bit 0x200 (no schema names it; `Flags` decodes as `[]` with `value` 0x200)
-picks one entry from a total of 1000, where each entry's `Chance None Value` is its chance *not* to
-roll, so values above 100 are normal and a high value means a rare entry. `esm walk` labels such a
-list `weighted` and computes the odds; quote them from its output.
-**Example:** `ATX_Resources_MallSanta_resource` (0x0091A29B): Nice 900 → 10%, Naughty 100 → 90%.
-*verified 2026-10-26 vs 20261026*
+A leveled list with flag bit 0x200 (`Weighted Chance None?`, a name inferred from this use)
+picks one entry, each entry's `Chance None Value` being its weight; values above 100 are normal and
+a high value means a common entry. An entry's odds are its weight over the sum of the eligible
+entries' weights, and the weights need not sum to 1000. `esm walk` labels such a list `weighted` and
+computes the odds; quote them from its output. The rule is inferred from list shapes, not confirmed
+against the engine.
+**Example:** `ATX_Resources_AbandonedNest_resource` (0x008F84FA): four scraps at 240 and an egg at 40
+→ 24% per scrap, 4% for the egg.
+*verified 2026-11-03 vs 20261026*
 
 ## A reward row gated on `GetRandomPercent <=` a 0-valued GLOB was already off
 
