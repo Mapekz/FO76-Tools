@@ -23,6 +23,8 @@
 //!   (see [`MAX_ITEMS`]) stops it at the first N entries that roll, in list
 //!   order: with a cap of 1 and an unconditioned first entry, that entry is
 //!   the only thing the list ever gives.
+//!   A flat `Max Value` is not that cap: it caps item value, per item or in
+//!   total (unconfirmed), and is noted rather than modeled.
 //! - **`Use First Object That Matches All Conditions`**: ordered cascade —
 //!   the first entry whose gate passes wins; a lower entry's true odds are
 //!   its own gate times the product of every earlier entry's miss chance.
@@ -30,6 +32,8 @@
 //!   entry's Chance None value is its pick weight. Among eligible entries,
 //!   one is selected in proportion to that value. Inferred from list shapes
 //!   (Abandoned Nest: 240 ×4, 40), not confirmed against the engine.
+//!
+//! A list's own `Conditions` gate the whole list, like an entry's.
 //!
 //! `Chance None` (list- and entry-level, except entries of a weighted list)
 //! is layered on *after* selection — it is not one of the CTDA eligibility
@@ -279,7 +283,8 @@ fn eval_curve(v: &Resolved, x: f32) -> Option<f64> {
 
 /// The field names of one leveled-list scalar's three sources.
 struct ScalarFields {
-    flat: &'static str,
+    /// `None` when the flat field isn't this scalar (see [`MAX_ITEMS`]).
+    flat: Option<&'static str>,
     global: &'static str,
     curve: &'static str,
     /// Whether a curve with no Global reads the player level. Chance None and
@@ -290,13 +295,13 @@ struct ScalarFields {
 }
 
 const CHANCE_NONE: ScalarFields = ScalarFields {
-    flat: "Chance None Value",
+    flat: Some("Chance None Value"),
     global: "Chance None Global",
     curve: "Chance None Curve Table",
     curve_reads_level: true,
 };
 const QUANTITY: ScalarFields = ScalarFields {
-    flat: "Quantity",
+    flat: Some("Quantity"),
     global: "Quantity Global",
     curve: "Quantity Curve Table",
     curve_reads_level: true,
@@ -305,19 +310,26 @@ const QUANTITY: ScalarFields = ScalarFields {
 /// there does the cap change anything: entries roll in list order and the
 /// list stops once this many have rolled. A Curve Table is indexed by its
 /// tier Global (`Container_MaxCount_*` with `Container_MaxCount_*_Tier`).
+/// The flat `Max Value` is not a count (see [`max_value_note`]), though the
+/// schema pairs it with these two.
 const MAX_ITEMS: ScalarFields = ScalarFields {
-    flat: "Max Value",
+    flat: None,
     global: "Max Global",
     curve: "Max Curve Table",
     curve_reads_level: true,
 };
 const MIN_LEVEL: ScalarFields = ScalarFields {
-    flat: "Minimum Level",
+    flat: Some("Minimum Level"),
     global: "Minimum Level Global",
     // The schema's typo, preserved verbatim.
     curve: "Minimim Level Curve Table",
     curve_reads_level: false,
 };
+
+/// A scalar's flat value, `None` when it has no flat field.
+fn flat(node: &Resolved, fields: &ScalarFields) -> Option<f64> {
+    node.get(fields.flat?).and_then(Resolved::as_f64)
+}
 
 /// One scalar from its flat value, Global and Curve Table: a Curve Table
 /// wins, evaluated at its Global's value when a Global is set and at `level`
@@ -379,9 +391,9 @@ fn resolve_scalar(
             }),
             None => {}
         }
-        return node.get(fields.flat).and_then(Resolved::as_f64);
+        return flat(node, fields);
     }
-    global.or_else(|| node.get(fields.flat).and_then(Resolved::as_f64))
+    global.or_else(|| flat(node, fields))
 }
 
 /// A list's chance-none as a probability in `[0, 1]` ([`resolve_scalar`]).
@@ -410,6 +422,23 @@ fn entry_chance_none_value(entry: &Resolved, level: f32, notes: &mut Vec<DropNot
 /// A weighted list entry's pick weight, never below zero.
 fn entry_weight(chance_none: Option<f64>) -> f64 {
     chance_none.unwrap_or(0.0).max(0.0)
+}
+
+/// A note for a list's flat `Max Value`. It caps item value rather than the
+/// number of items: each item's value or the list's total, unconfirmed. So
+/// it is reported and left out of the odds.
+fn max_value_note(fields: &Resolved) -> Option<DropNote> {
+    let value = fields
+        .get("Max Value")
+        .and_then(Resolved::as_f64)
+        .filter(|v| *v > 0.0)?;
+    Some(DropNote::Unresolved {
+        reason: format!(
+            "Max Value {value} caps item value, not the item count: each item's value or the \
+             list's total, unconfirmed. Odds ignore it; an item worth more than {value} may \
+             never drop"
+        ),
+    })
 }
 
 /// A list's item cap ([`MAX_ITEMS`], or the legacy `Max Count` u8). `None`
@@ -721,7 +750,7 @@ struct Eligible {
 /// entries that qualify.
 struct ResolvedList {
     model: SelectionModel,
-    /// Chance the list-level Chance None lets anything through.
+    /// Chance the list's own Conditions and Chance None let anything through.
     list_factor: f64,
     /// The cap on a `Use All` list (see [`MAX_ITEMS`]); `None` elsewhere.
     max_items: Option<u32>,
@@ -761,7 +790,14 @@ fn resolve_list(fields: &Resolved, opts: &DropOptions) -> ResolvedList {
     }
     dedup_sorted(&mut sublists);
 
-    let list_factor = 1.0 - list_chance_none(fields, opts.level, &mut notes);
+    notes.extend(max_value_note(fields));
+    // A list's own Conditions gate the whole list, like an entry's gate its
+    // entry (`LLE_NukeResources_Glowing` rolls only in the nuke regions).
+    let list_gate = match fields.get("Conditions") {
+        Some(c) => entry_gate_prob(&flatten_condition_rows(c), opts.strict, &mut notes),
+        None => 1.0,
+    };
+    let list_factor = list_gate * (1.0 - list_chance_none(fields, opts.level, &mut notes));
     let max_items = resolve_max_items(fields, opts.level, &mut notes)
         .filter(|_| model == SelectionModel::UseAll);
 
@@ -1046,6 +1082,10 @@ fn walk_node(
     let mut sum_effective_survive = 0.0_f64;
     let mut prod_all_fail = 1.0_f64;
     let mut branches: Vec<DropBranch> = Vec::new();
+    // Where a leading entry can be picked and still yield nothing, whether
+    // the engine moves on to later entries is unconfirmed.
+    let ordered = list.max_items.is_some() || list.model == SelectionModel::UseFirstMatch;
+    let mut empty_pick: Option<String> = None;
 
     for (i, (entry, &chosen_i)) in list.entries.iter().zip(&chosen).enumerate() {
         if chosen_i <= 0.0 {
@@ -1150,12 +1190,29 @@ fn walk_node(
         }
 
         capped_rolls[i].1 = child_empty;
+        if ordered && child_empty > 0.0 && i + 1 < list.entries.len() && empty_pick.is_none() {
+            empty_pick = Some(target.editor_id.clone());
+        }
         let survive_i = effective_i * (1.0 - child_empty);
         if disjoint {
             sum_effective_survive += survive_i;
         } else {
             prod_all_fail *= 1.0 - survive_i;
         }
+    }
+
+    if let Some(editor_id) = empty_pick {
+        let counted = if list.max_items.is_some() {
+            "counts that roll against the cap"
+        } else {
+            "takes that pick as the list's"
+        };
+        node_notes.push(DropNote::Unresolved {
+            reason: format!(
+                "entry {editor_id} can be picked and yield nothing; walk {counted}, and whether \
+                 the engine moves on to later entries instead is unconfirmed"
+            ),
+        });
     }
 
     // ─── project: the node's odds, leaves and tree rows ─────────────────────
@@ -1712,13 +1769,33 @@ mod tests {
         assert!((row(&table, "First").p_at_least_one - 1.0).abs() < 1e-9);
         assert!(table.p_nothing.abs() < 1e-9);
 
-        // Cap 2 by a flat Max Value: the first two, never the third.
-        fields["Max Global"] = Value::Null;
-        fields["Max Value"] = json!(2.0);
+        // Cap 2: the first two, never the third.
+        fields["Max Global"] = glob_stub(FormId::new(0x34), "Container_MaxCount_Two", 2.0);
         let table = drop_table(&mut f, root, &r(&fields), &DropOptions::default()).unwrap();
         assert_eq!(table.max_items, Some(2));
         assert!((row(&table, "Second").p_at_least_one - 1.0).abs() < 1e-9);
         assert!(table.rows.iter().all(|r| r.editor_id != "Third"));
+    }
+
+    #[test]
+    fn drop_table_notes_a_flat_max_value_instead_of_capping() {
+        let mut f = MemorySource::new();
+        let root = FormId::new(0x38);
+        let mut fields = lvli_fields(
+            &["Use All"],
+            vec![
+                entry_ref(target_stub(FormId::new(0x39), "MISC", "First")),
+                entry_ref(target_stub(FormId::new(0x3A), "MISC", "Second")),
+            ],
+        );
+        fields["Max Value"] = json!(1.0);
+        let table = drop_table(&mut f, root, &r(&fields), &DropOptions::default()).unwrap();
+        assert_eq!(table.max_items, None);
+        let second = row(&table, "Second");
+        assert!((second.p_at_least_one - 1.0).abs() < 1e-9);
+        assert!(second.notes.iter().any(
+            |n| matches!(n, DropNote::Unresolved { reason } if reason.starts_with("Max Value 1 caps item value"))
+        ));
     }
 
     #[test]
@@ -1734,7 +1811,7 @@ mod tests {
         ];
         entries[2]["Leveled List Entry"]["Quantity"] = json!(3.0);
         let mut fields = lvli_fields(&["Use All"], entries);
-        fields["Max Value"] = json!(1.0);
+        fields["Max Global"] = glob_stub(FormId::new(0x44), "Container_MaxCount_Single_Tier", 1.0);
         let table = drop_table(&mut f, root, &r(&fields), &DropOptions::default()).unwrap();
         assert!((row(&table, "One").p_at_least_one - 0.10).abs() < 1e-9);
         assert!((row(&table, "Two").p_at_least_one - 0.09).abs() < 1e-9);
@@ -1758,11 +1835,86 @@ mod tests {
                 entry_ref(target_stub(FormId::new(0x52), "BOOK", "B")),
             ],
         );
-        fields["Max Value"] = json!(1.0);
+        fields["Max Global"] = glob_stub(FormId::new(0x53), "Container_MaxCount_Single_Tier", 1.0);
         let table = drop_table(&mut f, root, &r(&fields), &DropOptions::default()).unwrap();
         assert_eq!(table.model, SelectionModel::Pool);
         assert_eq!(table.max_items, None);
         assert!((row(&table, "A").p_at_least_one - 0.5).abs() < 1e-9);
+    }
+
+    fn condition(function: &str, operator: &str, cmp: f64) -> Value {
+        json!({"Conditions": [{"Condition": {"Condition Data": {
+            "Function": function,
+            "Operator": operator,
+            "Comparison Value": cmp,
+            "AND/OR": "AND",
+            "Run On": "Subject",
+        }}}]})
+    }
+
+    #[test]
+    fn drop_table_gates_a_list_on_its_own_conditions() {
+        // LLE_NukeResources_Glowing's shape: a list-level gate on the whole list.
+        let mut f = MemorySource::new();
+        let root = FormId::new(0x60);
+        let mut fields = lvli_fields(
+            &[],
+            vec![entry_ref(target_stub(FormId::new(0x61), "MISC", "A"))],
+        );
+        fields["Conditions"] = condition("GetRandomPercent", "Less Than", 25.0);
+        let table = drop_table(&mut f, root, &r(&fields), &DropOptions::default()).unwrap();
+        assert!((row(&table, "A").p_at_least_one - 0.25).abs() < 1e-9);
+        assert!((table.p_nothing - 0.75).abs() < 1e-9);
+
+        // A gate the engine can't compute passes by default, with a note.
+        fields["Conditions"] = condition("GetIsInRegion", "Equal To", 1.0);
+        let table = drop_table(&mut f, root, &r(&fields), &DropOptions::default()).unwrap();
+        let a = row(&table, "A");
+        assert!((a.p_at_least_one - 1.0).abs() < 1e-9);
+        assert!(a.notes.contains(&DropNote::Gated {
+            function: "GetIsInRegion".into()
+        }));
+    }
+
+    #[test]
+    fn drop_table_notes_a_leading_entry_that_can_yield_nothing() {
+        // LLD_Creature_Glowing's shape: a cap of 1 led by a sublist that is
+        // empty half the time.
+        let mut f = MemorySource::new();
+        let root = FormId::new(0x70);
+        let child = FormId::new(0x71);
+        let mut child_fields = lvli_fields(
+            &[],
+            vec![entry_ref(target_stub(FormId::new(0x72), "MISC", "Inner"))],
+        );
+        child_fields["Chance None Value"] = json!(50.0);
+        f.insert(child, "LVLI", "Child", 0, child_fields);
+        let entries = vec![
+            entry_ref(target_stub(child, "LVLI", "Child")),
+            entry_ref(target_stub(FormId::new(0x73), "MISC", "Later")),
+        ];
+        let empty_pick = |table: &DropTable| {
+            row(table, "Inner").notes.iter().any(
+                |n| matches!(n, DropNote::Unresolved { reason } if reason.starts_with("entry Child can be picked and yield nothing")),
+            )
+        };
+
+        let mut fields = lvli_fields(&["Use All"], entries.clone());
+        fields["Max Global"] = glob_stub(FormId::new(0x74), "Container_MaxCount_Single_Tier", 1.0);
+        let table = drop_table(&mut f, root, &r(&fields), &DropOptions::default()).unwrap();
+        assert!(empty_pick(&table));
+
+        let fields = lvli_fields(
+            &["Use First Object That Matches All Conditions"],
+            entries.clone(),
+        );
+        let table = drop_table(&mut f, root, &r(&fields), &DropOptions::default()).unwrap();
+        assert!(empty_pick(&table));
+
+        // Uncapped Use All rolls every entry, so nothing is in question.
+        let fields = lvli_fields(&["Use All"], entries);
+        let table = drop_table(&mut f, root, &r(&fields), &DropOptions::default()).unwrap();
+        assert!(!empty_pick(&table));
     }
 
     fn entry_weighted(target: Value, chance_none: f64) -> Value {

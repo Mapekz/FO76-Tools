@@ -438,11 +438,12 @@ receivers retire.
 legacy `Max Count`) stops the list once that many entries have rolled, so a cap of 1 gives the
 first entry to roll. Clearing `Use All` on such a list turns it into an even pick across every
 entry: a real change. A flat `Max Value` is not a count. It caps either each item's value or the list's total value
-(unconfirmed), so one far below the items' values is a bug either way. `walk` wrongly prints it as
-`Use All, capped at N`. An
+(unconfirmed), so one far below the items' values is a bug either way; `walk` notes it and leaves
+it out of the odds. An
 entry ahead of the others shadows them only if it always yields, so check a sublist's list-level
 `Conditions`, list-level Chance None and level-tier Chance None before calling later entries
-unreachable. `walk` treats a sublist's list-level `Conditions` as passing.
+unreachable. `walk` notes a list-level gate it can't compute and a leading entry that can be picked
+and still yield nothing; whether the engine then moves on is unconfirmed.
 **Example:** `LLS_Recipes_Mods_PowerArmor_Raider_Tier1` (0x0050EC89) keeps `Max Global` 0x00308435 = 1 and loses `Use All`: the Torso Strength plan every time → each of 5 plans at 20%. `LLD_Creature_Glowing` (0x0021C00A, same cap) is not shadowed: its first entry `LLE_NukeResources_Glowing` rolls only in `NukeRegionA`/`B`/`C` and has Chance None 30–90 below level 60.
 *verified 2026-11-04 vs 20261026*
 
