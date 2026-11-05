@@ -431,18 +431,20 @@ receivers retire.
 **Example:** LMG `MG42` (0x0007CAB1): `.45 Chamber` 0x00947F7D carries the old Standard .45 Receiver 0x0084CC9E's package.
 *verified 2026-10-26 vs 20261026*
 
-## A capped Use All list gives the first entries to roll, in list order
+## A count-capped Use All list gives the first entries to roll; Max Value is not a count
 
-`Use All` gives every entry its own roll (an entry with no Chance None or `GetRandomPercent` gate
-always rolls). A list cap (`Max Value`, `Max Global` such as `Container_MaxCount_Single_Tier`
-0x00308435 = 1, a `Max Curve Table` read at its tier Global, or legacy `Max Count`) stops the list
-once that many entries have rolled. So `Use All` with a cap of 1 gives the first entry to roll, and
-if that entry always rolls, it is the only item the list ever gives. Clearing `Use All` on such a
-list turns it into an even pick across every entry: a real change. Adding a cap to an uncapped
-`Use All` list turns "every entry" into "the first to roll". `walk` applies the cap
-(`Use All, capped at N`).
-**Example:** `LLS_Recipes_Mods_PowerArmor_Raider_Tier1` (0x0050EC89) keeps `Max Global` 0x00308435 = 1 and loses `Use All`: the Torso Strength plan every time → each of 5 plans at 20%. `LLS_Scrap_Fertilizer` (0x00432CA5) keeps `Use All` and gains Max Value 0 → 1: 3 Fertilizer plus 10% each for 1 and 2 more → one stack (1 at 10%, 2 at 9%, 3 at 81%).
-*verified 2026-10-27 vs 20261026*
+`Use All` gives every entry its own roll. A count cap (`Max Global` such as
+`Container_MaxCount_Single_Tier` 0x00308435 = 1, a `Max Curve Table` read at its tier Global, or
+legacy `Max Count`) stops the list once that many entries have rolled, so a cap of 1 gives the
+first entry to roll. Clearing `Use All` on such a list turns it into an even pick across every
+entry: a real change. A flat `Max Value` is not a count. It caps either each item's value or the list's total value
+(unconfirmed), so one far below the items' values is a bug either way. `walk` wrongly prints it as
+`Use All, capped at N`. An
+entry ahead of the others shadows them only if it always yields, so check a sublist's list-level
+`Conditions`, list-level Chance None and level-tier Chance None before calling later entries
+unreachable. `walk` treats a sublist's list-level `Conditions` as passing.
+**Example:** `LLS_Recipes_Mods_PowerArmor_Raider_Tier1` (0x0050EC89) keeps `Max Global` 0x00308435 = 1 and loses `Use All`: the Torso Strength plan every time → each of 5 plans at 20%. `LLD_Creature_Glowing` (0x0021C00A, same cap) is not shadowed: its first entry `LLE_NukeResources_Glowing` rolls only in `NukeRegionA`/`B`/`C` and has Chance None 30–90 below level 60.
+*verified 2026-11-04 vs 20261026*
 
 ## A collector's `CarryWeight` property caps the weight of what it can produce
 

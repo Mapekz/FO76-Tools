@@ -394,15 +394,32 @@ owner/rank gates) — those surface as notes rather than being silently guessed.
   conditions pass, so an entry gated on `GetRandomPercent ≤ 10` genuinely is a
   flat 10%, and later entries are reachable only when every earlier gate fails
   (their true probability is the product of the preceding misses).
-- **A list cap makes `Use All` give the first entries to roll, in list order.** The cap is
-  `Max Value`, `Max Global` (`Container_MaxCount_Single_Tier` 0x00308435 = 1 is the common one), a
-  `Max Curve Table` read at its tier Global, or legacy `Max Count`. Entries roll in order and the
-  list stops once that many have rolled, so a cap of 1 over an unconditioned first entry gives only
-  that entry. `walk` labels the node `Use All, capped at N` and applies it:
-  `LLS_Recipes_Mods_PowerArmor_Raider_Tier1` (0x0050EC89) in 20261015 gives the Torso Strength plan
-  every time. A cap on a pool or first-match list changes nothing (they give one entry anyway). An
-  entry that rolls counts against the cap even if its sublist comes back empty, and whether a cap
+- **`Max Value` is not an item count, and what it does is unconfirmed.** It caps either each
+  item's value (anything worth more never drops) or the list's total value (the first item to
+  drop uses it up). 0 is unset. A `Max Value` far below the list's item values is a data bug
+  either way: `RA_LL_Rewards_PublicEvents_Flux` (0x0086A8CE) has Max Value 3, and every flux in
+  it is worth 100. `walk` still treats `Max Value` as an item count and prints
+  `Use All, capped at N` for it; disregard that label and the odds under it when the cap is a flat
+  `Max Value`. The schema reads `Max Global` and `Max Curve Table` as that field's Global and
+  Curve sources, but the Globals are named `Container_MaxCount_*`, so whether they cap value or
+  count is unconfirmed.
+- **A count cap (`Max Global`, `Max Curve Table` read at its tier Global, legacy `Max Count`)
+  makes `Use All` give the first entries to roll, in list order.** The list stops once that many
+  entries have rolled, so a cap of 1 over an entry that always yields gives only that entry. A
+  cap on a pool or first-match list changes nothing (they give one entry anyway). Whether a cap
   counts entries or copies on a Quantity above 1 is unconfirmed and noted.
+- **Before calling a later entry unreachable, walk what each earlier entry yields.** An
+  unconditioned, Chance-None-0 entry that points at a sublist still comes back empty when the
+  sublist's own list-level `Conditions` fail, its list-level Chance None hits, or its picked
+  Minimum Level tier has a Chance None. `walk` evaluates entry-level `Conditions` only: a
+  sublist's list-level `Conditions` are treated as passing with no note. It also counts an entry
+  that rolled but came back empty against the cap; whether the engine frees that slot is
+  unconfirmed. The same question applies to a first-match list whose winning entry yields
+  nothing. Example: `LLD_Creature_Glowing` (0x0021C00A, `Use All`, `Max Global` 1) leads with
+  `LLE_NukeResources_Glowing` (0x003D028F). That list and its sublist only roll inside
+  `NukeRegionA`/`B`/`C` (`GetIsInRegion`, OR), and its level tiers carry Chance None 90 at level 1
+  down to 0 from level 60. So Nuclear Waste, glowing meat and the rest are reachable whenever the
+  first slot comes up empty, even though `walk` shows them at 0%.
 - **`Weighted Chance None?` (LVLF bit 9, 0x200) makes each entry's Chance None
   value its selection weight.** Divide each weight by the sum of eligible entry
   weights. `ATX_Resources_AbandonedNest_resource` has four weights of 240 and
