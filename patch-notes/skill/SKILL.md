@@ -8,7 +8,8 @@ description: >
   change shape), fans out 1-2 deep writers armed with the mechanics KB over the DEEP tier
   only, gates every drafted number and every DEEP story, audits existing-item changes
   across all tiers, reconciles deferrals in the orchestrator, assembles a single
-  patch-summary.md, has it cold-reviewed in a fresh
+  patch-summary.md, drafts de-duplicated bug reports for
+  the developers (asking which to paste into Discord), has it cold-reviewed in a fresh
   context, and chunks it for Discord. Use when asked to write, refresh, or re-run weekly
   patch notes.
 ---
@@ -457,6 +458,61 @@ review findings by severity, chunk count, KB entries
 added, total reported subagent tokens and any missing usage, and the output paths (`$OUT/patch-summary.md`,
 `$OUT/discord/`) — no game-data paths or `$FO76_DATA_DIR` expansions in the printed summary
 either.
+
+## Bug reports
+
+Every run drafts bug reports for the developers; they are separate from the player-facing patch
+notes. Draft them after Step 4 (so the item audit and deferrals are settled) and before
+Step 5, so the cold reviewer checks them with the summary. Cover bugs found while
+verifying this build (a change that looks unintended, a half-applied fix, a broken reference,
+an orphaned or mis-wired record) plus every earlier report still open or partly fixed in NEW.
+
+**Dedupe against earlier builds first.** Read every `bug-reports/` under
+`$FO76_DATA_DIR/notes/*_to_<OLD>/` and earlier (the `NN-*.md` files and each `status.md`). Match
+a candidate to an earlier report by its record EditorID/FormID and defect, not by wording.
+- Same defect already reported and still present: do not write a new file. Record it as
+  "still open, reported <patch>" in `status.md`.
+- Reported earlier and now fixed: record "fixed" in `status.md`; no file.
+- Genuinely new, or the defect changed shape: write a new file.
+
+**One bug per file**, `$OUT/bug-reports/NN-<slug>.md`, under 1,900 characters, citing EditorID
+and FormID per record, in this shape (this is what gets pasted into Discord):
+
+```
+## Bug Title
+
+Description
+
+Repro steps:
+1. <step>
+2. <step>
+
+Patch: <patch number> (<MM-DD>)
+Platform: All
+Dept: Gameplay Code
+```
+
+`Dept` is exactly one of: Animation Art, Character Art, Environment Art, VFX Art, Lighting Art,
+ATX, Audio, Graphics Code, Gameplay Code, BNET, Level Design, Quest Design, System Design.
+- **BNET** is Bethesda.net: online services, social components, account systems, login.
+- **ATX** is the Atomic Shop: store assets, season pass, scoreboard, and similar.
+Pick by who would fix it, not by record type.
+
+`bug-reports/status.md` rechecks every earlier report (open, partly fixed, fixed). Put
+confidence in `bug-reports/index.md`, never in the report files: one row per new report with
+file, title, Dept, and a confidence that it is a real bug (`high`/`med`/`low`) with a one-line
+reason (e.g. "no consumer references the new record" vs. "may be intentional"). Confidence
+reflects evidence from the ESM: a verified broken reference is `high`; a change that could be
+deliberate design is `low`.
+
+**The patch notes keep only this build's fixes,** written as ordinary changes: no bug-tracker
+section or "still broken" lines.
+
+**Ask at the end.** After the Step 7 report, list every new report (number, title, Dept,
+confidence and reason) and ask the user which to paste into Discord and which to throw out.
+Delete the thrown-out files and their `index.md` rows, and keep the pasted ones. Do not paste or
+post anything yourself. Reports the user discards are recorded in `status.md` as "rejected" so a
+later run does not re-file them.
 
 ## Guardrails
 
