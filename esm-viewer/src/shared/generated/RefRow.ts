@@ -7,15 +7,18 @@ import type { RefPathNode } from "./RefPathNode";
  */
 export type RefRow = { form_id: string, record_type: string | null, editor_id: string | null, name: string | null, offset: number, 
 /**
- * Hop distance from the lookup target (1 = direct reference).
+ * Hop distance from the lookup target (1 = direct reference). In a
+ * carrier walk the target is the entry point or OMOD property, so the
+ * carriers are depth 1 and their referencers depth 2.
  */
 depth: number, 
 /**
  * Intermediate nodes on the path from target to this record.
  * Empty when depth = 1 (direct reference).
  *
- * In an entry-point walk (`emit_seeds`), `path[0]` is the originating
- * carrier, so depth-1 rows already have a non-empty path.
+ * In a carrier walk (entry-point or OMOD-property selector), the
+ * depth-1 rows are the carriers themselves and `path[0]` of every
+ * deeper row is the originating carrier.
  */
 path?: Array<RefPathNode>, 
 /**
@@ -29,8 +32,8 @@ path?: Array<RefPathNode>,
 field_paths?: Array<string> | null, 
 /**
  * Carrier tags the originating carrier matched, when the walk was seeded
- * by a virtual selector (e.g. entry-point). On a `depth: 0` row these are
- * the carrier's own matches; on deeper rows they are inherited from the
+ * by a virtual selector (e.g. entry-point). On a carrier row (`depth: 1`)
+ * these are the carrier's own matches; on deeper rows they are inherited from the
  * carrier the BFS reached this record through (`path[0]`). Empty for a
  * single-target walk.
  */

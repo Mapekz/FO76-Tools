@@ -1,6 +1,6 @@
 # `refs` seed selectors are Direct or Carriers; positional auto-detect requires collision-free names
 
-Status: accepted (2026-08-04)
+Status: accepted (2026-08-04); carrier depth amended 2026-11-14
 
 `esm refs` answers "what references this?" by resolving a selector to one or more BFS seed
 FormIDs, then walking the reverse-reference index. That resolution has exactly two shapes,
@@ -10,8 +10,13 @@ expressed as `RefSeeds` in `src/ops/mod.rs` and dispatched from one function, `r
   in `src/hardcoded.rs`: FormIDs defined by the game executable rather than by an ESM record,
   e.g. `Strength`, `DamageRecieved`). Resolves to exactly one seed FormID. That seed is never
   itself emitted as an output row; only its referencers are.
-- **Carriers** — a selector that matches zero or more *records*, each emitted as a `depth: 0`
-  seed row tagged with what it matched, then walked as ordinary BFS roots. Today's Carrier
+- **Carriers** — a selector that matches zero or more *records*, each emitted as a `depth: 1`
+  row tagged with what it matched: the carriers are the entry point's or property's direct
+  references, so `--depth` counts from the selector exactly as it counts from a Direct target.
+  `--depth 1` (the default) returns the carriers alone; `--depth 2+` walks on from them as
+  ordinary BFS roots, their referencers at depth 2. (Until 2026-11-14 carriers were `depth: 0`
+  and always walked one more hop, so `--depth 1` returned two hops from the property and no
+  setting returned the carriers alone.) Today's Carrier
   selectors are `--entry-point`/`--ep` (every PERK carrying a given Entry Point) and
   `--omod-property`/`--prop` (every OMOD declaring a given property). Carrier identity lives on
   `RefRow.tags: Vec<CarrierTag>` (`kind` is `EntryPoint` or `OmodProperty`; `scope` is `None`

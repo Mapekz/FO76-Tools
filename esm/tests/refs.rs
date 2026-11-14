@@ -985,9 +985,9 @@ fn build_perk_entry_points(form_id: u32, edid: &str, entry_points: &[u8]) -> Vec
 ///   30 CONT RefCont      — → CarrierA/10
 ///   31 LVLI RefList      — → CarrierA/10
 ///   32 CONT RefContB     — → CarrierB/11
-///   33 LVLI SharedDeep   — → RefCont/30 and RefContB/32 (depth 2 from both
+///   33 LVLI SharedDeep   — → RefCont/30 and RefContB/32 (depth 3 from both
 ///                          CarrierA and CarrierB — equal-depth union case)
-///   34 LVLI SharedGlob   — → GlobA/15 and GlobB/16 (depth 1 from both;
+///   34 LVLI SharedGlob   — → GlobA/15 and GlobB/16 (depth 2 from both;
 ///                          equal-depth union of distinct EPs 41+42)
 fn make_entry_point_esm() -> Vec<u8> {
     let mut buf = tes4_header();
@@ -1175,11 +1175,12 @@ fn perks_by_entry_point_reaches_unnamed_id_only_by_number() {
     let _ = std::fs::remove_file(&path);
 }
 
-/// [`referenced_by_enriched_multi`] emits every seed as its own `depth: 0`
-/// row before the BFS-found referencer rows, and referencers of either seed
-/// are found and deduped together.
+/// [`referenced_by_enriched_multi`] emits every seed as its own `depth: 1`
+/// row — the carriers are the entry point's direct references — so the
+/// default `--depth 1` returns the carriers alone, and the carriers
+/// themselves are the unexpanded frontier.
 #[test]
-fn referenced_by_enriched_multi_emits_carriers_at_depth_zero_then_bfs() {
+fn referenced_by_enriched_multi_depth_one_returns_only_carriers() {
     let (path, db) = open_entry_point_db();
 
     let list = referenced_by_enriched_multi(
@@ -1194,25 +1195,59 @@ fn referenced_by_enriched_multi_emits_carriers_at_depth_zero_then_bfs() {
     )
     .expect("referenced_by_enriched_multi");
 
+    let ids: Vec<&str> = list.rows.iter().map(|r| r.form_id.as_str()).collect();
+    assert_eq!(ids, vec![FormId(10).display(), FormId(11).display()]);
+    assert!(list.rows.iter().all(|r| r.depth == 1 && r.path.is_empty()));
+    assert_eq!(list.carrier_total, Some(2));
+    assert_eq!(list.per_depth_totals, vec![0, 2]);
+    assert_eq!(list.shown_max_depth, 1);
+    assert!(
+        list.depth_capped,
+        "the carriers are the frontier at --depth 1: {list:?}"
+    );
+    assert_eq!(list.frontier_remaining, 2);
+
+    let _ = std::fs::remove_file(&path);
+}
+
+/// At `--depth 2`, the carriers (depth 1) come first, then the records
+/// referencing either carrier (depth 2), found and deduped together.
+#[test]
+fn referenced_by_enriched_multi_emits_carriers_at_depth_one_then_bfs() {
+    let (path, db) = open_entry_point_db();
+
+    let list = referenced_by_enriched_multi(
+        &db,
+        &seeds_with_ep(&[(10, 39), (11, 39)]),
+        "entry point 39 (Mod Percent Blocked)".to_string(),
+        esm::ops::RefDepth::from_hops(2),
+        0,
+        None,
+        false,
+        esm::ops::RefSort::Formid,
+    )
+    .expect("referenced_by_enriched_multi");
+
     assert_eq!(list.target, "entry point 39 (Mod Percent Blocked)");
     // 2 carriers + RefCont(30) + RefList(31) + RefContB(32); SharedDeep is
-    // depth 2 and excluded at depth=1.
+    // depth 3 and excluded at depth=2.
     assert_eq!(
         list.total, 5,
-        "2 carriers + 3 depth-1 referencers: {list:?}"
+        "2 carriers + 3 depth-2 referencers: {list:?}"
     );
     assert!(!list.capped);
+    assert_eq!(list.per_depth_totals, vec![0, 2, 3]);
 
     let carrier_a = &list.rows[0];
     assert_eq!(carrier_a.form_id, FormId(10).display());
-    assert_eq!(carrier_a.depth, 0);
+    assert_eq!(carrier_a.depth, 1);
     assert!(carrier_a.path.is_empty());
     assert_eq!(carrier_a.tags.len(), 1);
     assert_eq!(carrier_a.tags[0].id, 39);
 
     let carrier_b = &list.rows[1];
     assert_eq!(carrier_b.form_id, FormId(11).display());
-    assert_eq!(carrier_b.depth, 0);
+    assert_eq!(carrier_b.depth, 1);
 
     let referencer_ids: Vec<&str> = list.rows[2..].iter().map(|r| r.form_id.as_str()).collect();
     assert_eq!(
@@ -1224,7 +1259,7 @@ fn referenced_by_enriched_multi_emits_carriers_at_depth_zero_then_bfs() {
         ],
         "referencer rows must sort by FormID after the carrier rows"
     );
-    assert!(list.rows[2..].iter().all(|r| r.depth == 1));
+    assert!(list.rows[2..].iter().all(|r| r.depth == 2));
     // path[0] is the originating carrier in EP mode.
     let ref_cont = list
         .rows
@@ -1249,7 +1284,7 @@ fn referenced_by_enriched_multi_type_filter_applies_to_carriers_too() {
         &db,
         &seeds_with_ep(&[(10, 39), (11, 39)]),
         "entry point 39 (Mod Percent Blocked)".to_string(),
-        esm::ops::RefDepth::from_hops(1),
+        esm::ops::RefDepth::from_hops(2),
         0,
         Some("CONT"),
         false,
@@ -1271,7 +1306,7 @@ fn referenced_by_enriched_multi_type_filter_applies_to_carriers_too() {
             .all(|r| r.record_type.as_deref() == Some("CONT"))
     );
     // Legend still attributable via inherited tags even with no
-    // depth-0 carrier rows.
+    // carrier rows.
     assert!(list.rows.iter().all(|r| !r.tags.is_empty()));
 
     let _ = std::fs::remove_file(&path);
@@ -1319,7 +1354,7 @@ fn dispatch_referenced_by_resolves_explicit_entry_point_selector() {
     let carrier_ids: Vec<&str> = list
         .rows
         .iter()
-        .filter(|r| r.depth == 0)
+        .filter(|r| r.depth == 1)
         .map(|r| r.form_id.as_str())
         .collect();
     assert_eq!(
@@ -1361,7 +1396,7 @@ fn dispatch_referenced_by_edid_falls_back_to_entry_point_when_edid_miss() {
     assert!(
         list.rows
             .iter()
-            .any(|r| r.depth == 0 && r.form_id == FormId(10).display())
+            .any(|r| r.depth == 1 && r.form_id == FormId(10).display())
     );
 
     let _ = std::fs::remove_file(&path);
@@ -1394,8 +1429,8 @@ fn dispatch_referenced_by_edid_wins_over_entry_point_name_collision() {
          label), not an entry-point label"
     );
     assert!(
-        list.rows.iter().all(|r| r.depth != 0),
-        "the direct-target path must never emit depth-0 carrier rows: {list:?}"
+        list.carrier_total.is_none(),
+        "the direct-target path must never emit carrier rows: {list:?}"
     );
 
     let _ = std::fs::remove_file(&path);
@@ -1437,7 +1472,7 @@ fn entry_point_tags_inherited_and_unioned_on_equal_depth_re_reach() {
         &db,
         &seeds_with_ep(&[(15, 41), (16, 42)]),
         "entry point 'Mod Incoming Spell*' (2 matched)".to_string(),
-        esm::ops::RefDepth::from_hops(1),
+        esm::ops::RefDepth::from_hops(2),
         0,
         None,
         false,
@@ -1450,7 +1485,7 @@ fn entry_point_tags_inherited_and_unioned_on_equal_depth_re_reach() {
         .iter()
         .find(|r| r.form_id == FormId(34).display())
         .expect("SharedGlob must appear");
-    assert_eq!(shared.depth, 1);
+    assert_eq!(shared.depth, 2);
     let ids: Vec<u16> = shared.tags.iter().map(|e| e.id).collect();
     assert_eq!(
         ids,
@@ -1465,24 +1500,24 @@ fn entry_point_tags_inherited_and_unioned_on_equal_depth_re_reach() {
         "first-seed order wins path attribution"
     );
 
-    // Depth-2 SharedDeep from CarrierA+CarrierB (same EP 39) also unions.
+    // Depth-3 SharedDeep from CarrierA+CarrierB (same EP 39) also unions.
     let deep = referenced_by_enriched_multi(
         &db,
         &seeds_with_ep(&[(10, 39), (11, 39)]),
         "entry point 39".to_string(),
-        esm::ops::RefDepth::from_hops(2),
+        esm::ops::RefDepth::from_hops(3),
         0,
         None,
         false,
         esm::ops::RefSort::Formid,
     )
-    .expect("depth-2 walk");
+    .expect("depth-3 walk");
     let shared_deep = deep
         .rows
         .iter()
         .find(|r| r.form_id == FormId(33).display())
         .expect("SharedDeep");
-    assert_eq!(shared_deep.depth, 2);
+    assert_eq!(shared_deep.depth, 3);
     assert_eq!(shared_deep.tags.len(), 1);
     assert_eq!(shared_deep.tags[0].id, 39);
     assert_eq!(
@@ -1504,7 +1539,7 @@ fn referenced_by_walk_preserves_seed_order_for_carriers_and_attribution() {
         &db,
         &seeds_with_ep(&[(15, 41), (16, 42)]),
         "forward".to_string(),
-        esm::ops::RefDepth::from_hops(1),
+        esm::ops::RefDepth::from_hops(2),
         0,
         None,
         false,
@@ -1515,7 +1550,7 @@ fn referenced_by_walk_preserves_seed_order_for_carriers_and_attribution() {
         &db,
         &seeds_with_ep(&[(16, 42), (15, 41)]),
         "reverse".to_string(),
-        esm::ops::RefDepth::from_hops(1),
+        esm::ops::RefDepth::from_hops(2),
         0,
         None,
         false,
@@ -1526,13 +1561,13 @@ fn referenced_by_walk_preserves_seed_order_for_carriers_and_attribution() {
     let fwd_carriers: Vec<&str> = forward
         .rows
         .iter()
-        .filter(|r| r.depth == 0)
+        .filter(|r| r.depth == 1)
         .map(|r| r.form_id.as_str())
         .collect();
     let rev_carriers: Vec<&str> = reverse
         .rows
         .iter()
-        .filter(|r| r.depth == 0)
+        .filter(|r| r.depth == 1)
         .map(|r| r.form_id.as_str())
         .collect();
     assert_eq!(
@@ -1844,7 +1879,7 @@ fn dispatch_referenced_by_resolves_explicit_omod_property_selector() {
     let list: RefList = serde_json::from_value(v).expect("RefList");
 
     assert!(list.target.contains("OMOD property"));
-    let carriers: Vec<_> = list.rows.iter().filter(|row| row.depth == 0).collect();
+    let carriers: Vec<_> = list.rows.iter().filter(|row| row.depth == 1).collect();
     assert_eq!(carriers.len(), 2);
     assert_eq!(carriers[0].form_id, FormId(42).display());
     assert_eq!(carriers[0].tags[0].scope.as_deref(), Some("armo"));
@@ -1881,7 +1916,6 @@ fn dispatch_referenced_by_edid_health_stays_direct_hardcoded_record() {
     let list: RefList = serde_json::from_value(v).expect("RefList");
 
     assert_eq!(list.target, FormId(0x0000_02D4).display());
-    assert!(list.rows.iter().all(|row| row.depth != 0));
     assert!(list.carrier_total.is_none());
     assert!(list.tag_total.is_none());
 

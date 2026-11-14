@@ -6,7 +6,7 @@ import type { RefRow } from "./RefRow";
  */
 export type RefList = { target: string, rows: Array<RefRow>, total: number, capped: boolean, 
 /**
- * Total depth-0 carrier rows before `--limit` truncation. Set only for
+ * Total carrier rows (depth 1) before `--limit` truncation. Set only for
  * entry-point (multi-seed) walks; used by the CLI capped-output note.
  */
 carrier_total?: number | null, 
@@ -42,7 +42,8 @@ frontier_remaining: number,
 /**
  * Row count per hop depth, index = depth, computed before `--limit`
  * truncation (so this reflects the full walk, not just what's shown).
- * Index 0 is always the carrier-row count (0 for a single-target walk).
+ * Index 0 is the target itself and is always 0; in a carrier walk,
+ * index 1 is the carrier-row count.
  */
 per_depth_totals: Array<number>, 
 /**

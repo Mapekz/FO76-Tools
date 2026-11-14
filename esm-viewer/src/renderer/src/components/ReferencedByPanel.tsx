@@ -8,7 +8,7 @@ function pathLabel(node: RefPathNode): string {
   return node.editor_id ?? node.form_id
 }
 
-/** Render the hop chain for any row with a path: target ← hop1 ← … ← this row (entry-point walks seed path[0] with the carrier, so depth-1 rows render too). */
+/** Render the hop chain for any row with a path: target ← hop1 ← … ← this row (in entry-point/property walks the depth-1 carriers have no path, and path[0] of every deeper row is its carrier). */
 function HopChain({ row }: { row: RefRow }) {
   const path = row.path ?? []
   if (path.length === 0) return null

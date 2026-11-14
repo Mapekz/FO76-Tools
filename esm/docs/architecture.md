@@ -244,7 +244,7 @@ records). `RefSeeds` resolves a CLI selector to BFS seeds along exactly two shap
 **Direct** (a FormID, a real EditorID, or an engine-hardcoded EditorID from `src/hardcoded.rs`'s
 ~228-entry table of FormIDs the game executable defines but no ESM record does — e.g. AVIF
 `KillStreak`) resolves to one seed; **Carriers** (`--entry-point`/`--ep`, `--omod-property`/
-`--prop`) resolves to every matching record, each emitted as a `depth: 0` seed row. Only a
+`--prop`) resolves to every matching record, each emitted as a `depth: 1` row. Only a
 Carriers namespace with zero measured EditorID collisions (entry points) earns bare positional
 auto-detection; a colliding namespace (OMOD properties — `Health` collides with a real AVIF)
 stays behind an explicit flag permanently.

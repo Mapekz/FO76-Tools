@@ -134,13 +134,16 @@ pub struct RefRow {
     pub editor_id: Option<String>,
     pub name: Option<String>,
     pub offset: u64,
-    /// Hop distance from the lookup target (1 = direct reference).
+    /// Hop distance from the lookup target (1 = direct reference). In a
+    /// carrier walk the target is the entry point or OMOD property, so the
+    /// carriers are depth 1 and their referencers depth 2.
     pub depth: usize,
     /// Intermediate nodes on the path from target to this record.
     /// Empty when depth = 1 (direct reference).
     ///
-    /// In an entry-point walk (`emit_seeds`), `path[0]` is the originating
-    /// carrier, so depth-1 rows already have a non-empty path.
+    /// In a carrier walk (entry-point or OMOD-property selector), the
+    /// depth-1 rows are the carriers themselves and `path[0]` of every
+    /// deeper row is the originating carrier.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub path: Vec<RefPathNode>,
     /// JSON field path(s) inside this record's decoded body where it
@@ -152,8 +155,8 @@ pub struct RefRow {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub field_paths: Option<Vec<String>>,
     /// Carrier tags the originating carrier matched, when the walk was seeded
-    /// by a virtual selector (e.g. entry-point). On a `depth: 0` row these are
-    /// the carrier's own matches; on deeper rows they are inherited from the
+    /// by a virtual selector (e.g. entry-point). On a carrier row (`depth: 1`)
+    /// these are the carrier's own matches; on deeper rows they are inherited from the
     /// carrier the BFS reached this record through (`path[0]`). Empty for a
     /// single-target walk.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -208,7 +211,7 @@ pub struct RefList {
     pub rows: Vec<RefRow>,
     pub total: usize,
     pub capped: bool,
-    /// Total depth-0 carrier rows before `--limit` truncation. Set only for
+    /// Total carrier rows (depth 1) before `--limit` truncation. Set only for
     /// entry-point (multi-seed) walks; used by the CLI capped-output note.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub carrier_total: Option<usize>,
@@ -238,7 +241,8 @@ pub struct RefList {
     pub frontier_remaining: usize,
     /// Row count per hop depth, index = depth, computed before `--limit`
     /// truncation (so this reflects the full walk, not just what's shown).
-    /// Index 0 is always the carrier-row count (0 for a single-target walk).
+    /// Index 0 is the target itself and is always 0; in a carrier walk,
+    /// index 1 is the carrier-row count.
     #[serde(default)]
     pub per_depth_totals: Vec<usize>,
     /// The deepest depth present in `rows` after `--limit` truncation — lets

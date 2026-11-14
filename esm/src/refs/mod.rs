@@ -78,9 +78,10 @@ pub fn referenced_by_enriched(
 }
 
 /// Multi-seed reverse-reference walk: every entry in `seeds` is emitted as
-/// its own `depth: 0` "carrier" row — unlike [`referenced_by_enriched`],
-/// whose single target is only a BFS root and never appears in the output —
-/// then the BFS proceeds from all seeds at once, so a record referencing two
+/// its own `depth: 1` "carrier" row — the carriers are the selector's
+/// direct references, just as a [`referenced_by_enriched`] walk's depth-1
+/// rows are its target's — then, when `depth` allows more hops, the BFS
+/// proceeds from all seeds at once, so a record referencing two
 /// different seeds is still only emitted once. Used by [`resolve_ref_seeds`]'s
 /// entry-point path (see [`crate::EntryPointSpec`]).
 ///
@@ -132,8 +133,8 @@ pub fn referenced_by_enriched_multi(
 /// Shared BFS behind [`referenced_by_enriched`] / [`referenced_by_enriched_multi`].
 ///
 /// `seeds` are the BFS roots, optionally tagged with carrier tags. When
-/// `emit_seeds` is true, each seed is also emitted as its own `depth: 0` row
-/// *before* the BFS-found referencer rows, and the queue is seeded with the
+/// `emit_seeds` is true, each seed is also emitted as its own `depth: 1` row
+/// *before* the BFS-found referencer rows (depth 2+), and the queue is seeded with the
 /// carrier's own [`RefPathNode`] so descendants' `path`/`VIA` trace back to
 /// that carrier. When false (Direct mode, a single target), seeds are only
 /// BFS roots with empty paths.
@@ -191,11 +192,15 @@ fn referenced_by_walk(
     let mut seen: HashSet<FormId> = seed_ids.iter().copied().collect();
 
     // Queue entries: (node_to_expand, originating_carrier, path).
-    // In EP mode (`emit_seeds`), path[0] is the carrier itself; hop_depth
-    // subtracts 1 so direct referencers still report depth 1. In Direct mode
-    // the origin is None and the path starts empty.
+    // In carrier mode (`emit_seeds`), the carriers are the selector's direct
+    // references and so sit at depth 1; path[0] is the carrier itself, which
+    // makes a carrier's referencers depth 2. In Direct mode the origin is
+    // None and the path starts empty.
     let mut queue: VecDeque<(FormId, Option<FormId>, Vec<RefPathNode>)> = VecDeque::new();
     let mut seed_rows: Vec<RefRow> = Vec::new();
+    // Newly-discovered nodes at `max_depth` that were not expanded further —
+    // the unexplored BFS frontier. See `RefList::depth_capped`.
+    let mut frontier_remaining: usize = 0;
 
     if emit_seeds {
         for &seed in &seed_ids {
@@ -215,15 +220,21 @@ fn referenced_by_walk(
                     editor_id: row.editor_id,
                     name: row.name,
                     offset: row.offset,
-                    depth: 0,
+                    depth: 1,
                     path: Vec::new(),
                     field_paths: None,
                     tags: seed_tags.get(&seed).cloned().unwrap_or_default(),
                 });
             }
             // Type-filtered carriers still contribute a RefPathNode so their
-            // descendants' path/VIA remain attributable.
-            queue.push_back((seed, Some(seed), vec![seed_node]));
+            // descendants' path/VIA remain attributable. At `--depth 1` the
+            // carriers are the frontier, exactly like a Direct walk's
+            // depth-1 referencers.
+            if 1 < max_depth {
+                queue.push_back((seed, Some(seed), vec![seed_node]));
+            } else {
+                frontier_remaining += 1;
+            }
         }
     } else {
         for &seed in &seed_ids {
@@ -236,13 +247,10 @@ fn referenced_by_walk(
     let mut rows: Vec<(FormId, RefRow)> = Vec::new();
     // FormId → index into `rows` for equal-depth carrier-tag unions.
     let mut emitted: HashMap<FormId, usize> = HashMap::new();
-    // Newly-discovered nodes at `max_depth` that were not expanded further —
-    // the unexplored BFS frontier. See `RefList::depth_capped`.
-    let mut frontier_remaining: usize = 0;
 
     while let Some((current, origin, path_here)) = queue.pop_front() {
         for fid in db.referencers(current)? {
-            let hop_depth = path_here.len() + 1 - usize::from(emit_seeds);
+            let hop_depth = path_here.len() + 1;
 
             if !seen.insert(fid) {
                 // Equal-depth re-reach: union tags onto the already-emitted
@@ -356,8 +364,8 @@ fn referenced_by_walk(
 struct WalkStats {
     total: usize,
     capped: bool,
-    /// Depth-0 rows that survived the type filter. 0 when `emit_seeds` is
-    /// false.
+    /// Carrier rows (depth 1) that survived the type filter. 0 when
+    /// `emit_seeds` is false.
     carrier_total: usize,
     requested_depth: usize,
     effective_depth: Option<usize>,
@@ -662,7 +670,7 @@ pub enum RefSeeds {
     /// root — [`referenced_by_enriched`] never emits it as a row.
     Direct(FormId),
     /// One or more carrier records matched by a virtual selector, each
-    /// emitted as its own `depth: 0` row by [`referenced_by_enriched_multi`].
+    /// emitted as its own `depth: 1` row by [`referenced_by_enriched_multi`].
     Carriers {
         label: String,
         seeds: crate::Carriers,

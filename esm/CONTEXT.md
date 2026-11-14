@@ -91,8 +91,9 @@ quest, container, loot list) indicating a record is actually reachable in game.
 _Avoid_: treating any reverse reference as proof of obtainability
 
 **Carrier**:
-A record matched by a Carriers-shape `refs` seed selector, emitted as a `depth: 0` seed
-row tagged with what it matched (`RefRow.tags` / `CarrierTag`).
+A record matched by a Carriers-shape `refs` seed selector, emitted as a `depth: 1` row (a
+direct reference to the matched entry point or property) tagged with what it matched
+(`RefRow.tags` / `CarrierTag`).
 _Avoid_: calling the Direct seed itself a carrier (Direct seeds are never emitted as rows)
 
 **Seed selector**:

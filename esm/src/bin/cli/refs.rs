@@ -127,8 +127,7 @@ struct RefColumns {
     /// that suppresses every carrier row still shows it (BFS rows inherit
     /// `tags`).
     show_target_line: bool,
-    /// Show the D(epth) column: true when depth is informative on at least
-    /// one row — a carrier row (depth 0), or any hop beyond a direct
+    /// Show the D(epth) column: true when any row is a hop beyond a direct
     /// reference (depth 1 alone would just repeat "1" on every row).
     show_depth: bool,
     show_via: bool,
@@ -152,8 +151,7 @@ impl RefColumns {
 }
 
 fn ref_columns(ref_list: &RefList) -> RefColumns {
-    let has_carriers = ref_list.rows.iter().any(|r| r.depth == 0);
-    let show_depth = has_carriers || ref_list.rows.iter().any(|r| r.depth > 1);
+    let show_depth = ref_list.rows.iter().any(|r| r.depth > 1);
     let show_target_line = ref_list.rows.iter().any(|r| !r.tags.is_empty());
     let distinct_tag_count: std::collections::BTreeSet<_> = ref_list
         .rows
@@ -207,10 +205,6 @@ fn print_refs(ref_list: &RefList, sort: esm::ops::RefSort, json: bool, pretty: b
                         row.name.as_deref().unwrap_or("").to_string(),
                     ];
                     if columns.show_depth {
-                        // depth 0 marks a carrier — `RefRow::depth`'s doc
-                        // says 1 = direct reference, so 0 is free as a "this
-                        // is the walk's starting point, not something it
-                        // found" sentinel.
                         cells.push(row.depth.to_string());
                     }
                     if columns.show_tag_column() {
@@ -303,7 +297,9 @@ fn print_refs(ref_list: &RefList, sort: esm::ops::RefSort, json: bool, pretty: b
         );
         if let (Some(carrier_total), Some(tag_total)) = (ref_list.carrier_total, ref_list.tag_total)
         {
-            let carriers_shown = ref_list.rows.iter().filter(|r| r.depth == 0).count();
+            // In a carrier walk every depth-1 row is a carrier: the
+            // carriers are the selector's direct references.
+            let carriers_shown = ref_list.rows.iter().filter(|r| r.depth == 1).count();
             let tags_shown = columns.distinct_tag_count;
             let tag_noun = if columns.tag_header == "PROP" {
                 "properties"
@@ -433,13 +429,19 @@ mod tests {
     }
 
     #[test]
-    fn ref_columns_carrier_only_rows_show_depth_but_no_other_columns() {
+    fn ref_columns_carrier_only_rows_show_no_optional_columns() {
+        // Carriers are their selector's direct references (depth 1), so a
+        // default `--depth 1` carrier walk renders like a plain flat list.
         let list = RefList {
-            rows: vec![ref_row(0), ref_row(0)],
+            rows: vec![ref_row(1), ref_row(1)],
+            carrier_total: Some(2),
             ..Default::default()
         };
         let columns = ref_columns(&list);
-        assert!(columns.show_depth, "a carrier (depth 0) row must show D");
+        assert!(
+            !columns.show_depth,
+            "carrier rows are depth 1, like any direct reference"
+        );
         assert!(!columns.show_target_line, "no tags on any row");
         assert!(!columns.show_via, "no row has a path");
         assert!(!columns.show_paths, "no row has field_paths");
@@ -501,12 +503,12 @@ mod tests {
         let list = RefList {
             rows: vec![
                 RefRow {
-                    depth: 0,
+                    depth: 1,
                     tags: vec![tag(1)],
                     ..Default::default()
                 },
                 RefRow {
-                    depth: 1,
+                    depth: 2,
                     tags: vec![tag(2)],
                     ..Default::default()
                 },
@@ -535,7 +537,7 @@ mod tests {
         };
         let list = RefList {
             rows: vec![RefRow {
-                depth: 0,
+                depth: 1,
                 tags: vec![tag],
                 ..Default::default()
             }],

@@ -81,33 +81,37 @@ subcommand.
 - `--entry-point`/`--ep` answers "what uses this hook?" — the reverse of
   reading a PERK's own Entry Point off `get`/`walk`. `esm refs --ep 'Mod
   Percent Blocked'` surfaces the Blocker perks and the Ogua Gauntlet/Defender's
-  leggo perks; one more `--depth` reaches the OMODs/weapons/perk cards that
-  reach *them*. Prefer the **numeric id** over the name: some entry-point names
-  are wrong (see below), and a few ids have no name in the schema at all —
-  `--ep 212` still finds its unnamed carrier. `--ep 0x...` is rejected (that's
-  a FormID, not an entry point).
+  leggo perks (the carriers, at depth 1); `--depth 2` reaches the
+  OMODs/weapons/perk cards that reach *them*. `--depth` counts from the entry
+  point, so the default `--depth 1` lists the carriers only. Prefer the
+  **numeric id** over the name: some entry-point names are wrong (see
+  below), and a few ids have no name in the schema at all — `--ep 212` still
+  finds its unnamed carrier. `--ep 0x...` is rejected (that's a FormID, not an
+  entry point).
 - **EP attribution:** a multi-match glob's stderr legend lists every matched
   entry point as `id name` — e.g. `entry point 'Mod Weapon*' (2 matched: 44 Mod
   Weapon Reload Speed, 45 Mod Weapon Spread)`. When more than one distinct id
   appears in the printed rows an `EP` column shows comma-joined numeric ids per
   row, carriers grouped by primary EP and BFS rows inheriting the originating
-  carrier's tag; `VIA` is populated from depth 1 and starts with the
+  carrier's tag; `VIA` is populated from depth 2 and starts with the
   originating carrier FormID. Attribution is
   first-reach at minimum depth; equal-depth ties **union**
   EP tags (a record referenced by two carriers shows both ids), but an overlap
-  first discovered at depth ≥ 2 that was already reached shallower stays
-  attributed only to the shallower carrier. Carriers are emitted *before*
-  referencers, so a broad glob at the default `--limit 100` may show only
-  carrier rows — use `--limit 0` when you need the referencers.
+  first discovered at depth ≥ 3 that was already reached shallower stays
+  attributed only to the shallower carrier. At `--depth 2+` carriers are
+  emitted *before* referencers, so a broad glob under `--limit 100` may show
+  only carrier rows — use `--limit 0` when you need the referencers.
 - `--omod-property`/`--prop` answers "which OMODs declare this property?".
   Unlike `--ep` it is **flag-only**, never auto-detected from a bare positional
   — `Health` is also a real AVIF EditorID, and a bare `refs Health` must keep
   resolving to that AVIF. Cross-space name collisions (same spelling, different id per space) include
   at least `Keywords` (weap:31 / armo:3 / npc:0), `Enchantments` (weap:65 /
   armo:0 / npc:3), `Perk` (weap:116 / armo:18), `ActorValues`/`Actor Values`,
-  and `Health` — scope-qualify whenever the space matters. Same
-  carriers-before-referencers caveat as `--ep`, and `Keywords` alone has
-  ~7,500+ carriers, so the default `--limit 100` shows nothing but carriers.
+  and `Health` — scope-qualify whenever the space matters. Like `--ep`, the
+  default `--depth 1` lists only the declaring OMODs; OMODs that merely
+  *include* a declaring template (`Data.Includes[N].Mod`, `_PARENT_*`,
+  `modcol_*`) inherit the property but appear only at `--depth 2`. `Keywords`
+  alone has ~7,500+ carriers, so pass `--limit 0` for the full list.
 
 **Worked example** (`Data.Includes[]` inheritance needs no special flag —
 `--paths` already labels the edges that include a Speed-declaring OMOD):
@@ -120,7 +124,7 @@ FORMID      TYPE  EDID                                PATHS
 0x007AC747  WEAP  crMinigun                           Object Template.Combinations[8]....Includes[0].Mod
 ```
 
-`esm refs --prop weap:Speed --depth 1 --paths` surfaces the same three edge
+`esm refs --prop weap:Speed --depth 2 --paths` surfaces the same three edge
 kinds from every Speed carrier: a COBJ crafting recipe (`Created Object`),
 a `modcol_*`/`_PARENT_*` collection (`Data.Includes[N].Mod`), and a WEAP
 craftable-mod slot (`Object Template.Combinations[N]...Includes[0].Mod`).

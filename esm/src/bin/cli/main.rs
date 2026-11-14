@@ -248,18 +248,18 @@ enum Commands {
         edid: Option<String>,
         /// PERK "Entry Point" name or numeric id — resolves to every PERK
         /// carrying it (e.g. `39`, `'Mod Percent Blocked'`), each emitted as
-        /// a depth-0 carrier row, then walks refs from all of them. Matching
+        /// a depth-1 carrier row; --depth 2+ also walks refs from them. Matching
         /// is case-insensitive exact unless the value contains `*`, which
         /// globs (e.g. `'Mod VATS*'`). Multi-match globs print a legend of
         /// every matched id+name and an `EP` column attributing each row to
-        /// its entry point(s); `VIA` starts at depth 1 naming the carrier.
+        /// its entry point(s); `VIA` starts at depth 2 naming the carrier.
         #[arg(long = "entry-point", visible_alias = "ep", conflicts_with_all = ["formid", "edid", "omod_property"])]
         entry_point: Option<String>,
         /// OMOD property name or numeric id, optionally scoped by form-type
         /// (weap:/armo:/npc:) — resolves to every OMOD declaring it (e.g.
         /// `weap:Speed`, `weap:31`, or a bare `Keywords` spanning all three
-        /// spaces), each emitted as a depth-0 carrier row, then walks refs from
-        /// all of them. A bare numeric id with no scope prefix is rejected —
+        /// spaces), each emitted as a depth-1 carrier row; --depth 2+ also
+        /// walks refs from them. A bare numeric id with no scope prefix is rejected —
         /// ids are only meaningful within one form-type space. Name matching
         /// is case- and whitespace-insensitive (`ActorValues`/`Actor Values`
         /// both match); `*` globs. Multi-space bare-name matches print a
