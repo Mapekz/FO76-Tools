@@ -87413,6 +87413,12 @@
           "width": "u8",
           "signed": false,
           "sig": "NAM1"
+        },
+        {
+          "_comment": "NNAM (record tail, after NAM1) \u2014 from 20261113 (fv 211), an inline NUL-terminated designer note, not a string-table ID although the ESM is localized: 'Pet Progression track for World Pet <species> species' on all 4 tracks.",
+          "kind": "string",
+          "name": "Notes",
+          "sig": "NNAM"
         }
       ]
     }

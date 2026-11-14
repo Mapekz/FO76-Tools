@@ -1410,7 +1410,7 @@
       "record": "PGTR",
       "op": "replace",
       "path": [],
-      "reason": "PGTR \u2014 whole-record override: no TES5Edit definition exists (every wbDefinitions*.pas in the pinned checkout and its full history; EcksEdit 4.1.6.18 still crashes on PGTR per fwdekker/fo76-dumps). Shape read off the 4 WorldPets_ProgressionTrack_* records in 20260903 (581 subrecords each: 30 entries, 32 rewards). Field names come from the game's own UI model in interface/petprogressiontrackmenu.swf (Shared/ProgressionNode.as, PetProgressionTrackMenu.as); members that model doesn't name stay 'Unknown' with the observed constant recorded, not guessed. Form Tags (FTAG 'WorldPets') follows EDID from 20260928 (fv 211). From 20261015 (fv 211) a reward can carry more than one VPRI-led item group; NAM6 counts them.",
+      "reason": "PGTR \u2014 whole-record override: no TES5Edit definition exists (every wbDefinitions*.pas in the pinned checkout and its full history; EcksEdit 4.1.6.18 still crashes on PGTR per fwdekker/fo76-dumps). Shape read off the 4 WorldPets_ProgressionTrack_* records in 20260903 (581 subrecords each: 30 entries, 32 rewards). Field names come from the game's own UI model in interface/petprogressiontrackmenu.swf (Shared/ProgressionNode.as, PetProgressionTrackMenu.as); members that model doesn't name stay 'Unknown' with the observed constant recorded, not guessed. Form Tags (FTAG 'WorldPets') follows EDID from 20260928 (fv 211). From 20261015 (fv 211) a reward can carry more than one VPRI-led item group; NAM6 counts them. From 20261113 a trailing NNAM designer note follows NAM1.",
       "node": {
         "name": "Progression Track",
         "members": [
@@ -1651,6 +1651,12 @@
             "width": "u8",
             "signed": false,
             "sig": "NAM1"
+          },
+          {
+            "_comment": "NNAM (record tail, after NAM1) \u2014 from 20261113 (fv 211), an inline NUL-terminated designer note, not a string-table ID although the ESM is localized: 'Pet Progression track for World Pet <species> species' on all 4 tracks.",
+            "kind": "string",
+            "name": "Notes",
+            "sig": "NNAM"
           }
         ]
       }

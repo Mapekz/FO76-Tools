@@ -993,7 +993,8 @@ fn pgtr_world_pets_radhog_track_decodes_correctly() {
 /// without it the second group's subrecords land in `_unmapped`.
 ///
 /// Verbatim subrecords from `esm get <esm> 0x0094A74B --raw`: the record
-/// header subrecords, the first of its 30 track entries, and the record tail.
+/// header subrecords, the first of its 30 track entries, and the record tail,
+/// which from build 20261113 ends in an NNAM designer note.
 /// PGTE still reads 30. The ESM is localized, so the lstrings hold
 /// string-table IDs; this test asserts structure and references only.
 #[test]
@@ -1033,6 +1034,10 @@ fn pgtr_world_pets_dog_track_decodes_two_item_reward() {
             ("ITME", ""),
             ("NAM0", "01"),
             ("NAM1", "00"),
+            (
+                "NNAM",
+                "5065742050726f6772657373696f6e20747261636b20666f7220576f726c642050657420446f67207370656369657300",
+            ),
         ],
     );
 
@@ -1067,4 +1072,9 @@ fn pgtr_world_pets_dog_track_decodes_two_item_reward() {
     assert_eq!(entry["Has Prerequisite"]["value"].as_u64(), Some(0));
     assert_eq!(result["Unknown 3"].as_u64(), Some(1));
     assert_eq!(result["Unknown 4"].as_u64(), Some(0));
+    assert_eq!(
+        result["Notes"].as_str(),
+        Some("Pet Progression track for World Pet Dog species"),
+        "NNAM is an inline designer note, not a string-table ID"
+    );
 }
