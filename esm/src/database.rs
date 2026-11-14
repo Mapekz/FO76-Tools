@@ -9,7 +9,7 @@ use crate::index::Index;
 use crate::reader::RecordMeta;
 use crate::reader::{EsmFile, FileInfo, ParsedRecord, RecordHeaderInfo, edid_from_subrecords};
 use crate::refs::seeds::{
-    CarrierKind, CarrierTag, Carriers, EntryPointSpec, OmodPropertySpec, PropScope,
+    Carrier, CarrierKind, CarrierTag, Carriers, EntryPointSpec, OmodPropertySpec, PropScope,
 };
 use crate::refs::seeds::{
     OmodPropertySel, entry_point_name_matches, enum_id_name, omod_property_name_matches,
@@ -1178,8 +1178,8 @@ impl Database {
     /// Returns `(label, seeds)`: `label` is a human-readable description of
     /// what matched — e.g. `"entry point 39 (Mod Percent Blocked)"` or
     /// `"entry point 'Mod VATS*' (14 matched: 43 Mod VATS Attack Damage, …)"`
-    /// — meant for [`ops::RefList::target`]; `seeds` are `(FormId, tags)`
-    /// pairs tagging each carrier with the entry points it matched.
+    /// — meant for [`ops::RefList::target`]; `seeds` are the [`Carrier`]s,
+    /// each with the entry points it matched and where.
     pub fn perks_by_entry_point(
         &self,
         spec: &EntryPointSpec,
@@ -1194,7 +1194,8 @@ impl Database {
                 continue;
             };
             let mut tags: Vec<CarrierTag> = Vec::new();
-            for effect in effects {
+            let mut field_paths: Vec<String> = Vec::new();
+            for (i, effect) in effects.iter().enumerate() {
                 let Some(ep) = effect.pointer("/Effect/Entry Point/Entry Point") else {
                     continue;
                 };
@@ -1210,6 +1211,7 @@ impl Database {
                 if is_match {
                     let name = name.map(str::to_string);
                     matched.insert((id, name.clone()));
+                    field_paths.push(format!("Effects[{i}].Effect.Entry Point.Entry Point"));
                     tags.push(CarrierTag {
                         kind: CarrierKind::EntryPoint,
                         id,
@@ -1221,10 +1223,14 @@ impl Database {
             if !tags.is_empty() {
                 tags.sort();
                 tags.dedup_by(|a, b| a.id == b.id);
-                seeds.push((entry.form_id, tags));
+                seeds.push(Carrier {
+                    form_id: entry.form_id,
+                    tags,
+                    field_paths,
+                });
             }
         }
-        seeds.sort_by_key(|(f, tags)| (tags.first().map(|t| t.id).unwrap_or(0), f.raw()));
+        seeds.sort_by_key(|c| (c.tags.first().map(|t| t.id).unwrap_or(0), c.form_id.raw()));
 
         let label = match matched.len() {
             0 => format!("entry point {} (no match)", spec.display()),
@@ -1273,8 +1279,8 @@ impl Database {
     /// what matched — e.g. `"OMOD property weap:0 (Speed)"` or
     /// `"OMOD property 'Enchantments' (3 matched: weap:65 Enchantments, \
     /// armo:0 Enchantments, npc:3 Enchantments)"` — meant for
-    /// [`ops::RefList::target`]; `seeds` are `(FormId, tags)` pairs tagging
-    /// each carrier with the properties it matched.
+    /// [`ops::RefList::target`]; `seeds` are the [`Carrier`]s, each with the
+    /// properties it matched and where.
     pub fn omods_by_property(&self, spec: &OmodPropertySpec) -> anyhow::Result<(String, Carriers)> {
         let sample = self.type_sample("OMOD")?;
         let entries = &sample.entries;
@@ -1305,7 +1311,8 @@ impl Database {
             };
 
             let mut tags: Vec<CarrierTag> = Vec::new();
-            for property in properties {
+            let mut field_paths: Vec<String> = Vec::new();
+            for (i, property) in properties.iter().enumerate() {
                 let Some(value) = property.get("Property") else {
                     continue;
                 };
@@ -1321,6 +1328,7 @@ impl Database {
                 if is_match {
                     let name = name.map(str::to_string);
                     matched.insert((scope, id, name.clone()));
+                    field_paths.push(format!("Data.Properties[{i}].Property"));
                     tags.push(CarrierTag {
                         kind: CarrierKind::OmodProperty,
                         id,
@@ -1332,11 +1340,18 @@ impl Database {
             if !tags.is_empty() {
                 tags.sort();
                 tags.dedup();
-                seeds.push((entry.form_id, tags));
+                seeds.push(Carrier {
+                    form_id: entry.form_id,
+                    tags,
+                    field_paths,
+                });
             }
         }
-        seeds.sort_by_key(|(form_id, tags)| {
-            (tags.first().map(|tag| tag.id).unwrap_or(0), form_id.raw())
+        seeds.sort_by_key(|c| {
+            (
+                c.tags.first().map(|tag| tag.id).unwrap_or(0),
+                c.form_id.raw(),
+            )
         });
 
         let label = match matched.len() {

@@ -15,7 +15,7 @@
 pub mod seeds;
 
 use crate::ops::{RecordSel, RefDepth, RefList, RefPathNode, RefRow, RefSort, resolve_sel};
-use crate::{CarrierTag, Database, EntryPointSpec, FormId, OmodPropertySpec, RecordRow};
+use crate::{Carrier, CarrierTag, Database, EntryPointSpec, FormId, OmodPropertySpec, RecordRow};
 use anyhow::bail;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -53,7 +53,11 @@ pub fn referenced_by_enriched(
 ) -> anyhow::Result<RefList> {
     let (rows, stats) = referenced_by_walk(
         db,
-        &[(target, Vec::new())],
+        &[Carrier {
+            form_id: target,
+            tags: Vec::new(),
+            field_paths: Vec::new(),
+        }],
         false,
         depth,
         limit,
@@ -91,7 +95,7 @@ pub fn referenced_by_enriched(
 #[allow(clippy::too_many_arguments)]
 pub fn referenced_by_enriched_multi(
     db: &Database,
-    seeds: &[(FormId, Vec<CarrierTag>)],
+    seeds: &[Carrier],
     label: String,
     depth: RefDepth,
     limit: usize,
@@ -101,7 +105,7 @@ pub fn referenced_by_enriched_multi(
 ) -> anyhow::Result<RefList> {
     let tag_total = seeds
         .iter()
-        .flat_map(|(_, tags)| tags.iter().map(|t| (t.kind, t.scope.as_deref(), t.id)))
+        .flat_map(|c| c.tags.iter().map(|t| (t.kind, t.scope.as_deref(), t.id)))
         .collect::<std::collections::BTreeSet<_>>()
         .len();
     let (rows, stats) = referenced_by_walk(
@@ -147,7 +151,7 @@ pub fn referenced_by_enriched_multi(
 #[allow(clippy::too_many_arguments)]
 fn referenced_by_walk(
     db: &Database,
-    seeds: &[(FormId, Vec<CarrierTag>)],
+    seeds: &[Carrier],
     emit_seeds: bool,
     depth: RefDepth,
     limit: usize,
@@ -176,20 +180,18 @@ fn referenced_by_walk(
     // re-sort by form_id — caller order drives carrier display grouping and
     // BFS attribution priority.
     let mut seen_seed = HashSet::new();
-    let seeds: Vec<(FormId, Vec<CarrierTag>)> = seeds
+    let seeds: Vec<&Carrier> = seeds
         .iter()
-        .filter(|(f, _)| seen_seed.insert(*f))
-        .cloned()
+        .filter(|c| seen_seed.insert(c.form_id))
         .collect();
     let seed_tags: HashMap<FormId, Vec<CarrierTag>> =
-        seeds.iter().map(|(f, tags)| (*f, tags.clone())).collect();
-    let seed_ids: Vec<FormId> = seeds.iter().map(|(f, _)| *f).collect();
+        seeds.iter().map(|c| (c.form_id, c.tags.clone())).collect();
 
     // `seen` is both the dedup set for emitted referencer rows and the BFS
     // visited set. Seeding with every entry in `seeds` prevents a seed from
     // appearing as another seed's own referencer and breaks self-referential
     // cycles.
-    let mut seen: HashSet<FormId> = seed_ids.iter().copied().collect();
+    let mut seen: HashSet<FormId> = seeds.iter().map(|c| c.form_id).collect();
 
     // Queue entries: (node_to_expand, originating_carrier, path).
     // In carrier mode (`emit_seeds`), the carriers are the selector's direct
@@ -203,7 +205,8 @@ fn referenced_by_walk(
     let mut frontier_remaining: usize = 0;
 
     if emit_seeds {
-        for &seed in &seed_ids {
+        for carrier in &seeds {
+            let seed = carrier.form_id;
             let Some(row) = db.record_row_for(seed)? else {
                 continue;
             };
@@ -222,8 +225,10 @@ fn referenced_by_walk(
                     offset: row.offset,
                     depth: 1,
                     path: Vec::new(),
-                    field_paths: None,
-                    tags: seed_tags.get(&seed).cloned().unwrap_or_default(),
+                    // A carrier's link to the selector is the element that
+                    // matched it, not a FormID reference.
+                    field_paths: include_paths.then(|| carrier.field_paths.clone()),
+                    tags: carrier.tags.clone(),
                 });
             }
             // Type-filtered carriers still contribute a RefPathNode so their
@@ -237,8 +242,8 @@ fn referenced_by_walk(
             }
         }
     } else {
-        for &seed in &seed_ids {
-            queue.push_back((seed, None, Vec::new()));
+        for carrier in &seeds {
+            queue.push_back((carrier.form_id, None, Vec::new()));
         }
     }
 
@@ -797,7 +802,7 @@ mod tests {
             RefSeeds::Carriers { label, seeds } => {
                 assert!(label.contains("39"), "unexpected label: {label}");
                 assert_eq!(seeds.len(), 1, "expected exactly one carrier: {seeds:?}");
-                assert_eq!(seeds[0].0, FormId(10));
+                assert_eq!(seeds[0].form_id, FormId(10));
             }
             RefSeeds::Direct(_) => panic!("expected Carriers, got Direct"),
         }

@@ -47,9 +47,22 @@ pub struct CarrierTag {
     pub scope: Option<String>,
 }
 
-/// Carrier records from a virtual selector (e.g. [`Database::perks_by_entry_point`]),
-/// each tagged with the match(es) that selected it.
-pub type Carriers = Vec<(FormId, Vec<CarrierTag>)>;
+/// One carrier record matched by a virtual selector: the tags it matched,
+/// and where in the record each match sits.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Carrier {
+    pub form_id: FormId,
+    /// Deduped by match (one tag per matched entry point or property).
+    pub tags: Vec<CarrierTag>,
+    /// Decoded-JSON path of every matching element, in record order (e.g.
+    /// `Data.Properties[3].Property`), in [`ops::RefRow::field_paths`]'s
+    /// syntax. Not deduped: two effects on one entry point give two paths.
+    /// Kept off [`CarrierTag`], which is a serialized DTO unioned across rows.
+    pub field_paths: Vec<String>,
+}
+
+/// Carrier records from a virtual selector (e.g. [`Database::perks_by_entry_point`]).
+pub type Carriers = Vec<Carrier>;
 
 impl EntryPointSpec {
     /// Parse a CLI token: an all-ASCII-digit token is a numeric id,

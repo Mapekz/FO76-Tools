@@ -52,5 +52,5 @@ pub use database::{Database, DatabaseResolver, ListEntry, RecordResult, RecordRo
 pub use filter::{FilterOp, FilterResult};
 pub use formid::{looks_like_formid, parse_form_id_input};
 pub use refs::seeds::{
-    CarrierKind, CarrierTag, Carriers, EntryPointSpec, OmodPropertySpec, PropScope,
+    Carrier, CarrierKind, CarrierTag, Carriers, EntryPointSpec, OmodPropertySpec, PropScope,
 };

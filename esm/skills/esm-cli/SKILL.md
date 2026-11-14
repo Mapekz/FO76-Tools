@@ -128,6 +128,9 @@ FORMID      TYPE  EDID                                PATHS
 kinds from every Speed carrier: a COBJ crafting recipe (`Created Object`),
 a `modcol_*`/`_PARENT_*` collection (`Data.Includes[N].Mod`), and a WEAP
 craftable-mod slot (`Object Template.Combinations[N]...Includes[0].Mod`).
+The carrier rows themselves name the element that matched the selector:
+`Data.Properties[N].Property` for `--prop`, `Effects[N].Effect.Entry
+Point.Entry Point` for `--ep` (one path per matching element).
 
 ## Mechanics digests: `walk` (interactive) and `chase` (pipeline JSON)
 

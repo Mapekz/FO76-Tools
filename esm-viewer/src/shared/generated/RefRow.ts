@@ -25,9 +25,12 @@ path?: Array<RefPathNode>,
  * JSON field path(s) inside this record's decoded body where it
  * references its direct predecessor in the hop chain (the walk target
  * itself, for depth = 1 rows) — e.g.
- * `"Effects[2].Conditions[0].Parameter 1"`. `None` unless `--paths` was
- * requested: computing this requires decoding the full record, so it's
- * opt-in and left absent on the default fast walk.
+ * `"Effects[2].Conditions[0].Parameter 1"`. A carrier row (depth 1 of
+ * an entry-point or OMOD-property walk) instead names each element that
+ * matched the selector, e.g. `"Data.Properties[3].Property"` or
+ * `"Effects[0].Effect.Entry Point.Entry Point"`. `None` unless `--paths`
+ * was requested: computing this requires decoding the full record, so
+ * it's opt-in and left absent on the default fast walk.
  */
 field_paths?: Array<string> | null, 
 /**

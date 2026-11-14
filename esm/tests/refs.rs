@@ -5,7 +5,7 @@ use common::{
 };
 use esm::ops::{Op, RecordSel, RefList, resolve_sel, run};
 use esm::refs::{find_ref_path, referenced_by_enriched, referenced_by_enriched_multi};
-use esm::{CarrierKind, CarrierTag, Database, EntryPointSpec, FormId, OmodPropertySpec};
+use esm::{Carrier, CarrierKind, CarrierTag, Database, EntryPointSpec, FormId, OmodPropertySpec};
 
 /// Verify that `Database::referenced_by` returns each referencing record
 /// **exactly once**, even when that record references the target FormID in
@@ -1011,18 +1011,17 @@ fn make_entry_point_esm() -> Vec<u8> {
 }
 
 /// Helper: wrap bare FormIDs as tagged seeds for [`referenced_by_enriched_multi`].
-fn seeds_with_ep(ids: &[(u32, u16)]) -> Vec<(FormId, Vec<CarrierTag>)> {
+fn seeds_with_ep(ids: &[(u32, u16)]) -> Vec<Carrier> {
     ids.iter()
-        .map(|&(fid, ep)| {
-            (
-                FormId(fid),
-                vec![CarrierTag {
-                    kind: CarrierKind::EntryPoint,
-                    id: ep,
-                    name: None,
-                    scope: None,
-                }],
-            )
+        .map(|&(fid, ep)| Carrier {
+            form_id: FormId(fid),
+            tags: vec![CarrierTag {
+                kind: CarrierKind::EntryPoint,
+                id: ep,
+                name: None,
+                scope: None,
+            }],
+            field_paths: Vec::new(),
         })
         .collect()
 }
@@ -1087,7 +1086,7 @@ fn perks_by_entry_point_matches_by_id_and_exact_case_insensitive_name() {
     let (label, seeds) = db
         .perks_by_entry_point(&EntryPointSpec::Id(39))
         .expect("perks_by_entry_point");
-    let seed_ids: Vec<FormId> = seeds.iter().map(|(f, _)| *f).collect();
+    let seed_ids: Vec<FormId> = seeds.iter().map(|c| c.form_id).collect();
     assert_eq!(
         seed_ids,
         vec![FormId(10), FormId(11), FormId(14)],
@@ -1097,7 +1096,8 @@ fn perks_by_entry_point_matches_by_id_and_exact_case_insensitive_name() {
         label.contains("39") && label.contains("Mod Percent Blocked"),
         "unexpected label: {label}"
     );
-    for (_, tags) in &seeds {
+    for c in &seeds {
+        let tags = &c.tags;
         assert_eq!(tags.len(), 1);
         assert_eq!(tags[0].id, 39);
         assert_eq!(tags[0].name.as_deref(), Some("Mod Percent Blocked"));
@@ -1130,7 +1130,7 @@ fn perks_by_entry_point_glob_matches_multiple_distinct_entry_points() {
     let (label, seeds) = db
         .perks_by_entry_point(&EntryPointSpec::Name("Mod Incoming Spell*".to_string()))
         .expect("perks_by_entry_point glob");
-    let seed_ids: Vec<FormId> = seeds.iter().map(|(f, _)| *f).collect();
+    let seed_ids: Vec<FormId> = seeds.iter().map(|c| c.form_id).collect();
     // Sorted by (primary EP id, form_id): GlobA(41,15), GlobBoth(41,17), GlobB(42,16).
     assert_eq!(seed_ids, vec![FormId(15), FormId(17), FormId(16)]);
     assert!(
@@ -1139,10 +1139,10 @@ fn perks_by_entry_point_glob_matches_multiple_distinct_entry_points() {
     );
     let both = seeds
         .iter()
-        .find(|(f, _)| *f == FormId(17))
+        .find(|c| c.form_id == FormId(17))
         .expect("GlobBoth");
     assert_eq!(
-        both.1.iter().map(|t| t.id).collect::<Vec<_>>(),
+        both.tags.iter().map(|t| t.id).collect::<Vec<_>>(),
         vec![41, 42],
         "GlobBoth must carry both matched entry points"
     );
@@ -1160,7 +1160,7 @@ fn perks_by_entry_point_reaches_unnamed_id_only_by_number() {
     let (label, seeds) = db
         .perks_by_entry_point(&EntryPointSpec::Id(213))
         .expect("perks_by_entry_point unnamed id");
-    let seed_ids: Vec<FormId> = seeds.iter().map(|(f, _)| *f).collect();
+    let seed_ids: Vec<FormId> = seeds.iter().map(|c| c.form_id).collect();
     assert_eq!(seed_ids, vec![FormId(13)]);
     assert!(label.contains("unnamed"), "unexpected label: {label}");
 
@@ -1749,23 +1749,23 @@ fn omods_by_property_scope_name_and_numeric_match_only_requested_space() {
         .omods_by_property(&OmodPropertySpec::parse("weap:Speed").unwrap())
         .expect("weap Speed");
     assert_eq!(
-        by_name.iter().map(|(fid, _)| *fid).collect::<Vec<_>>(),
+        by_name.iter().map(|c| c.form_id).collect::<Vec<_>>(),
         vec![FormId(40), FormId(44)]
     );
-    assert!(by_name.iter().all(|(_, tags)| tags.len() == 1));
-    assert!(by_name.iter().all(|(_, tags)| {
-        tags[0].id == 0
-            && tags[0].name.as_deref() == Some("Speed")
-            && tags[0].scope.as_deref() == Some("weap")
+    assert!(by_name.iter().all(|c| c.tags.len() == 1));
+    assert!(by_name.iter().all(|c| {
+        c.tags[0].id == 0
+            && c.tags[0].name.as_deref() == Some("Speed")
+            && c.tags[0].scope.as_deref() == Some("weap")
     }));
 
     let (_, by_id) = db
         .omods_by_property(&OmodPropertySpec::parse("armo:10").unwrap())
         .expect("armo property 10");
     assert_eq!(by_id.len(), 1);
-    assert_eq!(by_id[0].0, FormId(42));
-    assert_eq!(by_id[0].1[0].name.as_deref(), Some("Actor Values"));
-    assert_eq!(by_id[0].1[0].scope.as_deref(), Some("armo"));
+    assert_eq!(by_id[0].form_id, FormId(42));
+    assert_eq!(by_id[0].tags[0].name.as_deref(), Some("Actor Values"));
+    assert_eq!(by_id[0].tags[0].scope.as_deref(), Some("armo"));
 
     let _ = std::fs::remove_file(&path);
 }
@@ -1780,7 +1780,7 @@ fn omods_by_property_bare_name_spans_spaces_and_ignores_whitespace() {
         .omods_by_property(&OmodPropertySpec::parse("ActorValues").unwrap())
         .expect("cross-space ActorValues");
     assert_eq!(
-        actor_values.iter().map(|(fid, _)| *fid).collect::<Vec<_>>(),
+        actor_values.iter().map(|c| c.form_id).collect::<Vec<_>>(),
         vec![FormId(42), FormId(41)],
         "sorted by primary property id, then FormID"
     );
@@ -1796,7 +1796,7 @@ fn omods_by_property_bare_name_spans_spaces_and_ignores_whitespace() {
         .omods_by_property(&OmodPropertySpec::parse("Enchantments").unwrap())
         .expect("cross-space Enchantments");
     assert_eq!(
-        enchantments.iter().map(|(fid, _)| *fid).collect::<Vec<_>>(),
+        enchantments.iter().map(|c| c.form_id).collect::<Vec<_>>(),
         vec![FormId(42), FormId(43)]
     );
     assert!(
@@ -1822,7 +1822,7 @@ fn omods_by_property_no_match_and_glob_match_multiple_distinct_names() {
         .omods_by_property(&OmodPropertySpec::parse("weap:*Speed").unwrap())
         .expect("glob");
     assert_eq!(
-        globbed.iter().map(|(fid, _)| *fid).collect::<Vec<_>>(),
+        globbed.iter().map(|c| c.form_id).collect::<Vec<_>>(),
         vec![FormId(40), FormId(44)]
     );
     assert!(
@@ -1834,9 +1834,9 @@ fn omods_by_property_no_match_and_glob_match_multiple_distinct_names() {
     assert_eq!(
         globbed
             .iter()
-            .find(|(fid, _)| *fid == FormId(44))
+            .find(|c| c.form_id == FormId(44))
             .expect("WeaponGlob")
-            .1
+            .tags
             .len(),
         2,
         "duplicate Speed rows dedup, while ReloadSpeed remains distinct"
@@ -1947,6 +1947,151 @@ fn dispatch_referenced_by_edid_miss_does_not_fallback_to_omod_property() {
     assert!(
         !msg.contains("OMOD property"),
         "property fallback must remain absent: {msg}"
+    );
+
+    let _ = std::fs::remove_file(&path);
+}
+
+/// Runs `Op::ReferencedBy` for `sel` at `depth` hops, with or without `--paths`.
+fn run_carrier_refs(db: &Database, sel: RecordSel, depth: usize, paths: bool) -> RefList {
+    let v = run(
+        db,
+        &Op::ReferencedBy(esm::ops::ReferencedByArgs {
+            sel,
+            limit: 0,
+            depth: esm::ops::RefDepth::from_hops(depth),
+            type_filter: None,
+            paths,
+            sort: esm::ops::RefSort::Formid,
+        }),
+    )
+    .expect("run");
+    serde_json::from_value(v).expect("RefList")
+}
+
+/// `field_paths` of each depth-1 (carrier) row, keyed by FormID display.
+fn carrier_paths(list: &RefList) -> Vec<(String, Option<Vec<String>>)> {
+    list.rows
+        .iter()
+        .filter(|r| r.depth == 1)
+        .map(|r| (r.form_id.clone(), r.field_paths.clone()))
+        .collect()
+}
+
+/// With `--paths`, an OMOD carrier row names the property element that
+/// matched; without it, carrier rows carry no paths at all.
+#[test]
+fn carrier_paths_name_matching_omod_property_element() {
+    let (path, db) = open_omod_property_db();
+
+    let list = run_carrier_refs(
+        &db,
+        RecordSel::OmodProperty("weap:ActorValues".into()),
+        1,
+        true,
+    );
+    assert_eq!(
+        carrier_paths(&list),
+        vec![(
+            FormId(41).display(),
+            Some(vec!["Data.Properties[0].Property".to_string()])
+        )]
+    );
+
+    let plain = run_carrier_refs(
+        &db,
+        RecordSel::OmodProperty("weap:ActorValues".into()),
+        1,
+        false,
+    );
+    assert!(
+        plain.rows.iter().all(|r| r.field_paths.is_none()),
+        "{plain:?}"
+    );
+
+    let _ = std::fs::remove_file(&path);
+}
+
+/// A PERK matched by two effects lists both effects' entry-point paths.
+#[test]
+fn carrier_paths_list_every_matching_perk_effect() {
+    let (path, db) = open_entry_point_db();
+
+    let list = run_carrier_refs(&db, RecordSel::EntryPoint("39".into()), 1, true);
+    let ep = |i: usize| format!("Effects[{i}].Effect.Entry Point.Entry Point");
+    assert_eq!(
+        carrier_paths(&list),
+        vec![
+            (FormId(10).display(), Some(vec![ep(0)])),
+            (FormId(11).display(), Some(vec![ep(0)])),
+            (FormId(14).display(), Some(vec![ep(0), ep(1)])),
+        ]
+    );
+
+    let _ = std::fs::remove_file(&path);
+}
+
+/// A glob or multi-scope match lists only the elements that matched, not
+/// the carrier's other properties; a property repeated on one OMOD gives
+/// one tag but one path per element.
+#[test]
+fn carrier_paths_list_only_matching_elements() {
+    let (path, db) = open_omod_property_db();
+
+    let ench = run_carrier_refs(&db, RecordSel::OmodProperty("Enchantments".into()), 1, true);
+    assert_eq!(
+        carrier_paths(&ench),
+        vec![
+            // ArmorActorValues: [armo:10 Actor Values, armo:0 Enchantments]
+            (
+                FormId(42).display(),
+                Some(vec!["Data.Properties[1].Property".to_string()])
+            ),
+            (
+                FormId(43).display(),
+                Some(vec!["Data.Properties[0].Property".to_string()])
+            ),
+        ]
+    );
+
+    let glob = run_carrier_refs(&db, RecordSel::OmodProperty("weap:*Speed".into()), 1, true);
+    let weapon_glob = glob
+        .rows
+        .iter()
+        .find(|r| r.form_id == FormId(44).display())
+        .expect("WeaponGlob");
+    assert_eq!(weapon_glob.tags.len(), 2, "{weapon_glob:?}");
+    assert_eq!(
+        weapon_glob.field_paths.as_deref(),
+        Some(
+            &[
+                "Data.Properties[0].Property".to_string(),
+                "Data.Properties[1].Property".to_string(),
+                "Data.Properties[2].Property".to_string(),
+            ][..]
+        )
+    );
+
+    let _ = std::fs::remove_file(&path);
+}
+
+/// Carrier paths leave deeper rows alone: a depth-2 row still names the
+/// FormID reference to its carrier.
+#[test]
+fn carrier_paths_leave_depth_two_rows_unchanged() {
+    let (path, db) = open_entry_point_db();
+
+    let list = run_carrier_refs(&db, RecordSel::EntryPoint("39".into()), 2, true);
+    let ref_cont = list
+        .rows
+        .iter()
+        .find(|r| r.form_id == FormId(30).display())
+        .expect("RefCont");
+    assert_eq!(ref_cont.depth, 2);
+    let paths = ref_cont.field_paths.as_ref().expect("depth-2 paths");
+    assert!(
+        !paths.is_empty() && paths.iter().all(|p| !p.contains("Entry Point")),
+        "a depth-2 row's paths point at its carrier reference: {paths:?}"
     );
 
     let _ = std::fs::remove_file(&path);
