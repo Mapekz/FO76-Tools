@@ -328,8 +328,8 @@ class EsmGateway:
     ) -> dict:
         """`Op::ReferencedBy { sel: FormId, limit, depth, type_filter, paths }`.
         `limit=0` means unlimited; `depth="all"` requests an UNBOUNDED walk
-        (no fixed hop cap; `depth=0` is its deprecated spelling), any other
-        value clamps on the Rust side to `[1, DEFAULT_MAX_DEPTH]`. Returns the `RefList` dict: `{target, rows,
+        (no fixed hop cap), `depth=0` is rejected, and any other value clamps
+        on the Rust side to `[1, DEFAULT_MAX_DEPTH]`. Returns the `RefList` dict: `{target, rows,
         total, capped, requested_depth, effective_depth, depth_capped,
         frontier_remaining, per_depth_totals, shown_max_depth}` (see
         `RefList` in esm/src/ops/refs.rs for each field's exact meaning;

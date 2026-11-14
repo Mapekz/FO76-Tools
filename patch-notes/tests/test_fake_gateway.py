@@ -98,8 +98,9 @@ class FakeGatewayRefsTests(unittest.TestCase):
         self.assertEqual(result["rows"], self.client.refs("esm", self.WEAP, depth=6)["rows"])
         self.assertIsNone(result["effective_depth"])
         self.assertEqual(result["requested_depth"], 0)
-        with self.assertRaises(ValueError):
-            self.client.refs("esm", self.WEAP, depth="ALL")
+        for bad in ("ALL", 0):
+            with self.assertRaises(ValueError):
+                self.client.refs("esm", self.WEAP, depth=bad)
 
     def test_cycle_safety_target_not_reemitted(self):
         # The fixture deliberately makes LVLI reference the WEAP back (in

@@ -98,7 +98,7 @@ def extract_full(record: dict[str, Any]) -> str | None:
 
 def extract(esp_path: Path, esm_bin: str) -> list[dict]:
     # ``tree`` always emits JSON (no ``--json`` flag on this subcommand).
-    tree = run_esm(esm_bin, esp_path, "tree", "--limit", "0")
+    tree = run_esm(esm_bin, esp_path, "tree", "--limit", "all")
     if not isinstance(tree, list):
         raise RuntimeError(f"expected tree JSON array, got {type(tree).__name__}")
 
@@ -108,7 +108,7 @@ def extract(esp_path: Path, esm_bin: str) -> list[dict]:
         sig = label.get("sig")
         if not isinstance(sig, str) or not sig:
             continue
-        rows.extend(run_esm(esm_bin, esp_path, "list", "--type", sig, "--limit", "0", "--json"))
+        rows.extend(run_esm(esm_bin, esp_path, "list", "--type", sig, "--limit", "all", "--json"))
 
     if not rows:
         return []

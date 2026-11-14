@@ -506,7 +506,7 @@ fn op_referenced_by_without_new_fields_deserializes() {
             ..
         }) => {
             assert_eq!(limit, 100);
-            assert_eq!(depth, esm::ops::RefDepth::from_hops(1));
+            assert_eq!(depth, esm::ops::RefDepth::Hops(1));
             assert_eq!(type_filter, None);
             assert!(!paths);
         }
@@ -531,7 +531,7 @@ fn dispatch_referenced_by_with_type_filter_and_paths() {
     let op = Op::ReferencedBy(esm::ops::ReferencedByArgs {
         sel: RecordSel::FormId(esm::FormId(1)),
         limit: 0,
-        depth: esm::ops::RefDepth::from_hops(1),
+        depth: esm::ops::RefDepth::Hops(1),
         type_filter: Some("WEAP".to_string()),
         paths: true,
         sort: esm::ops::RefSort::Formid,
@@ -566,7 +566,7 @@ fn dispatch_referenced_by_with_type_filter_and_paths() {
     let op_no_match = Op::ReferencedBy(esm::ops::ReferencedByArgs {
         sel: RecordSel::FormId(esm::FormId(1)),
         limit: 0,
-        depth: esm::ops::RefDepth::from_hops(1),
+        depth: esm::ops::RefDepth::Hops(1),
         type_filter: Some("MISC".to_string()),
         paths: false,
         sort: esm::ops::RefSort::Formid,
@@ -994,8 +994,8 @@ fn walk_op_depth_is_optional_on_the_wire() {
 }
 
 /// `RefDepth`'s wire form is the hop count, or `"all"` for unbounded;
-/// `Hops(0)` walks one hop, so it goes out as 1. A 0 on the way in is the
-/// deprecated spelling of `"all"`.
+/// `Hops(0)` walks one hop, so it goes out as 1. A 0 on the way in is
+/// rejected, pointing at `"all"`.
 #[test]
 fn ref_depth_wire_form() {
     use esm::ops::RefDepth;
@@ -1005,7 +1005,8 @@ fn ref_depth_wire_form() {
     assert_eq!(wire(RefDepth::Hops(0)), "1");
     let read = |s: &str| serde_json::from_str::<RefDepth>(s);
     assert_eq!(read(r#""all""#).unwrap(), RefDepth::Unbounded);
-    assert_eq!(read("0").unwrap(), RefDepth::Unbounded);
+    let zero = read("0").unwrap_err().to_string();
+    assert!(zero.contains(r#"use "all""#), "{zero}");
     assert_eq!(read("2").unwrap(), RefDepth::Hops(2));
     for bad in [r#""ALL""#, "-1", "1.5"] {
         assert!(read(bad).is_err(), "{bad} must be rejected");

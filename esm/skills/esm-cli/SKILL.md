@@ -64,7 +64,8 @@ subcommand.
   `search` needs `"*"` to match all; `""` matches nothing.
 - `all` means "no cap" on every cap flag: `--limit all` (`list`/`tree`/
   `search`/`refs`), `refs --depth all`, `coverage --sample all`, and
-  `--ref-limit all` (`walk`/`chase`). `list`/`search`/`refs` print
+  `--ref-limit all` (`walk`/`chase`); those flags reject 0. (`walk --depth 0`
+  is different: it means "just the root".) `list`/`search`/`refs` print
   `note: output capped at N of M results; use --limit all to show all` to
   **stderr**, never stdout, so `--json` stays parseable when capped. `refs
   --json` is the whole walk result — `rows` plus `total`, `capped` and the

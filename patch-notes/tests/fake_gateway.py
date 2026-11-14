@@ -254,13 +254,13 @@ class FakeGateway:
         include_paths: bool = False,
     ) -> dict:
         # Mirror esm/src/refs/mod.rs::referenced_by_walk's clamp exactly:
-        # `depth == "all"` (or the deprecated 0) requests an UNBOUNDED walk
-        # (max_depth = None, no fixed hop cap, RefList.effective_depth =
-        # None, requested_depth = 0) -- NOT "treated as depth 1". Any other
-        # value clamps to `[1, DEFAULT_MAX_DEPTH]`.
-        unbounded = depth == "all" or depth == 0
-        if isinstance(depth, str) and not unbounded:
-            raise ValueError(f"invalid depth {depth!r}: expected a hop count or 'all'")
+        # `depth == "all"` requests an UNBOUNDED walk (max_depth = None, no
+        # fixed hop cap, RefList.effective_depth = None, requested_depth = 0)
+        # and 0 is rejected, as the real wire does. Any other value clamps
+        # to `[1, DEFAULT_MAX_DEPTH]`.
+        unbounded = depth == "all"
+        if (isinstance(depth, str) and not unbounded) or depth == 0:
+            raise ValueError(f"invalid depth {depth!r}: expected a hop count >= 1 or 'all'")
         requested_depth = 0 if unbounded else depth
         max_depth: int | None = None if unbounded else max(1, min(int(depth), DEFAULT_MAX_DEPTH))
         effective_depth = max_depth

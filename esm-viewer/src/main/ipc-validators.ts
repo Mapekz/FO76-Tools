@@ -43,8 +43,8 @@ export function validateUint(name: string, v: unknown, max = 100_000): number {
 
 /**
  * Referenced-by walk depth in hops. Absent means 1; integers clamp to
- * `1..=max`. Anything else is rejected, because the engine reads a depth of 0
- * as an unbounded walk.
+ * `1..=max` (the engine rejects 0). Anything else is rejected, including the
+ * engine's `"all"`, which would request an unbounded walk.
  */
 export function validateRefDepth(v: unknown, max = 6): number {
   if (v === undefined || v === null) return 1

@@ -34,7 +34,7 @@ describe('validateRefDepth', () => {
   })
 
   it('rejects non-integers instead of letting them reach the engine as an unbounded walk', () => {
-    for (const bad of ['3', 2.5, Number.NaN, {}]) {
+    for (const bad of ['3', 'all', 2.5, Number.NaN, {}]) {
       expect(() => validateRefDepth(bad)).toThrow(/invalid depth/)
     }
   })

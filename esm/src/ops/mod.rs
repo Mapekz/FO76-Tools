@@ -40,9 +40,8 @@ pub const DEFAULT_MAX_DEPTH: usize = 8;
 /// and `"depth": "all"` on the wire.
 pub const NO_CAP: &str = "all";
 
-/// How far a reverse-reference walk goes. On the wire it is a hop count, or
-/// `"all"` for an unbounded walk. A hop count of 0 is a deprecated spelling
-/// of `"all"`.
+/// How far a reverse-reference walk goes. On the wire it is a hop count of
+/// at least 1, or `"all"` for an unbounded walk; 0 is rejected.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[cfg_attr(test, ts(export, type = "number | \"all\""))]
@@ -58,16 +57,8 @@ impl RefDepth {
     /// Direct references only.
     pub const DIRECT: RefDepth = RefDepth::Hops(1);
 
-    /// `hops`, with the deprecated 0 meaning [`RefDepth::Unbounded`].
-    pub fn from_hops(hops: usize) -> RefDepth {
-        if hops == 0 {
-            RefDepth::Unbounded
-        } else {
-            RefDepth::Hops(hops)
-        }
-    }
-
-    /// The hop count as asked (0 = unbounded; `Hops(0)` asks for one hop).
+    /// The hop count as asked, as reported in `RefList::requested_depth`
+    /// (0 = unbounded; `Hops(0)` asks for one hop).
     pub fn requested(self) -> usize {
         match self {
             RefDepth::Hops(n) => n.max(1),
@@ -109,9 +100,13 @@ impl<'de> Deserialize<'de> for RefDepth {
                 write!(f, "a hop count or \"{NO_CAP}\"")
             }
             fn visit_u64<E: serde::de::Error>(self, v: u64) -> Result<RefDepth, E> {
-                usize::try_from(v)
-                    .map(RefDepth::from_hops)
-                    .map_err(|_| E::custom(format!("depth {v} is out of range")))
+                match usize::try_from(v) {
+                    Ok(0) => Err(E::custom(format!(
+                        "depth 0 is no longer accepted; use \"{NO_CAP}\" for an unbounded walk"
+                    ))),
+                    Ok(hops) => Ok(RefDepth::Hops(hops)),
+                    Err(_) => Err(E::custom(format!("depth {v} is out of range"))),
+                }
             }
             fn visit_i64<E: serde::de::Error>(self, v: i64) -> Result<RefDepth, E> {
                 u64::try_from(v)
