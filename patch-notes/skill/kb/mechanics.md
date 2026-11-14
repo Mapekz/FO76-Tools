@@ -104,8 +104,12 @@ cancel a sibling mod's positive MUL on that type.
   MaterialSwaps, ImpactDataSet, ZoomData, ModelSwap): Value 1 is the FormID, Value 2 is never read.
 - Property IDs seen raw: `77` `DamageTypeValues`, `80` `OverrideProjectile`, `106`
   `DamageBonusMult`, `116` `Perk`.
-- **A curve table on a property overrides Value 2.** Curve removed + Value 2 changed = scaling
-  replaced by a flat value. Armor carry-weight-style curves key on item level (1/10/20/30/40/50).
+- **A curve table on a `Float`/`Int` `MUL+ADD` row replaces Value 1** (the multiplier); the Value 1
+  beside it is a dead placeholder, and `esm walk` prints the curve. A curve → fixed Value 1 swap
+  changes the stat only when the new Value 1 differs from the curve's y; a flat curve (one y at every
+  level) swapped for that same y is plumbing (`mod_AlienRifle_Receiver_Sniper` 0x0062FE8C MaxRange
+  curve 1.1 beside Value 1 0.75 → Value 1 1.0 is a real cut, verified 20261113). Armor
+  carry-weight-style curves key on item level (1/10/20/30/40/50).
 - **`SET` vs `ADD` on a list-valued property is clobber vs append.** SET on `Keywords` or
   `Enchantments` erases every other entry, including the `ma_*` tags other mods target, so a lone
   `Function Type SET → ADD` row is that bug being fixed and matters more than it looks.
@@ -478,6 +482,18 @@ re-IDed entries break the `1783090000 + 100 × species + index` formula, and rea
 
 **Example:** `WorldPets_Buff_Bait_Finder` (0x0095F7B1) → ENCH 0x0095F7B7 `Effects[0]`: 940 == 1 plus Cat entry 0 claimed.
 *verified 2026-10-15 vs 20261015*
+
+## A World Pets gift passive's item and count live on an LVLI its MGEF script names
+
+Gift passives (Stimpak Fetcher, Baits Finder, Goo-Getter, Dark Titan) run
+`CAMPPets:PetGiftBuffEffectScript` on each rank MGEF; its `WorldPets_ItemToGiftPlayer` property
+names a Use First Match `WorldPets_LL_ConsumableBuff_<Species>` list with one entry per rank, gated
+on function 942 claims of that rank's track entry. The count is each entry's `Quantity Global`
+(the flat `Quantity` is a stale placeholder); the timer is GLOB `WorldPets_ConsumableGiftInterval`.
+Each rank MGEF also carries `WorldPets_Buff_Rank_N`, which FLST `WorldPets_BuffRank_OrderedList`
+orders for DFOB `WorldPetsBuffRanks_DO` (the rank display); every rank shares the rank-1 image keyword.
+**Example:** Dark Titan MGEF 0x008C9397 → LVLI 0x00947690, GLOBs 0x008D1872/76/80 = 1/2/3.
+*verified 2026-11-13 vs 20261113*
 
 ## A World Pets progression track is one PGTR record per species
 

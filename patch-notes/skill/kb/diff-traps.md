@@ -159,7 +159,9 @@ reverse on old hub QUSTs, dragging satellite TERM/ACTI/MESG records whose only c
 ## Undecoded blobs that change on every save are bookkeeping
 
 CELL `Unknown 2` is a little-endian u64 Unix timestamp (a last-saved stamp), and ACTI/TACT/TERM
-`Unknown CTRN` bumps only its ID bytes. Neither carries gameplay.
+`Unknown CTRN` bumps only its ID bytes. STAT `Distant LOD / True*` and ACTI `Unknown / hex` hold
+pointer-like garbage that differs between saves of an unchanged record, and they drag world
+satellites into unrelated quest bundles. None of these carries gameplay.
 
 **Example:** 20260814→20260821, 1,484 cells' `Unknown 2` moved from 2026-06 to 2026-08.
 *verified 2026-08-28 vs 20260821*
@@ -237,8 +239,9 @@ A leveled list with flag bit 0x200 (`Weighted Chance None?`, a name inferred fro
 picks one entry, each entry's `Chance None Value` being its weight; values above 100 are normal and
 a high value means a common entry. An entry's odds are its weight over the sum of the eligible
 entries' weights, and the weights need not sum to 1000. `esm walk` labels such a list `weighted` and
-computes the odds; quote them from its output. The rule is inferred from list shapes, not confirmed
-against the engine.
+computes the odds; quote them from its output. Swapping two entries' values swaps which one
+dominates, so walk both snapshots before calling a swap a buff or a nerf. The rule is inferred from
+list shapes, not confirmed against the engine.
 **Example:** `ATX_Resources_AbandonedNest_resource` (0x008F84FA): four scraps at 240 and an egg at 40
 → 24% per scrap, 4% for the egg.
 *verified 2026-11-03 vs 20261026*
