@@ -4,4 +4,8 @@
  * One page of the direct children of an arbitrary GRUP, by its own header
  * offset — see [`crate::Database::list_group_children`].
  */
-export type ListGroupChildrenArgs = { group_offset: number, offset: number, limit: number, };
+export type ListGroupChildrenArgs = { group_offset: number, offset: number, 
+/**
+ * Page size; 0 = no cap.
+ */
+limit: number, };

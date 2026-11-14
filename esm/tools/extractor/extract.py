@@ -27,7 +27,7 @@ CTDA_OUT = ROOT / "schema" / "fo76.ctda.json"
 OVERRIDES = ROOT / "schema" / "fo76.overrides.json"
 
 # Record types present in the FO76 ESM.
-# Generated from: esm tree /path/to/data | jq '[.[].label.sig] | unique | sort | .[]'
+# Generated from: esm --esm /path/to/data tree --limit all | jq '[.[].label.sig] | unique | sort | .[]'
 # Record types with no Pascal definition are deliberately NOT in this list — they are
 # supplied whole by a record-level fo76.overrides.json entry (currently: PGTR) — so the jq
 # output above must not be pasted back verbatim, or it would re-add them and make

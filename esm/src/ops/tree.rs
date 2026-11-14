@@ -15,6 +15,7 @@ pub(super) fn list_groups(db: &Database, _args: &NoArgs) -> anyhow::Result<Vec<G
 pub struct ListTypeChildrenArgs {
     pub sig: String,
     pub offset: usize,
+    /// Page size; 0 = no cap.
     pub limit: usize,
 }
 
@@ -33,6 +34,7 @@ pub(super) fn list_type_children(
 pub struct ListGroupChildrenArgs {
     pub group_offset: u64,
     pub offset: usize,
+    /// Page size; 0 = no cap.
     pub limit: usize,
 }
 

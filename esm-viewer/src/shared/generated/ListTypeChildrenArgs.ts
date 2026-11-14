@@ -3,4 +3,8 @@
 /**
  * One page of the top-level group for record type `sig`.
  */
-export type ListTypeChildrenArgs = { sig: string, offset: number, limit: number, };
+export type ListTypeChildrenArgs = { sig: string, offset: number, 
+/**
+ * Page size; 0 = no cap.
+ */
+limit: number, };

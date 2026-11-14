@@ -398,14 +398,17 @@ impl<'a> TreeView<'a> {
 
     /// Paginate the direct children of the GRUP at arena index `idx`,
     /// clamping `offset`/`limit` to the actual child count (never panics on
-    /// out-of-range pagination). Empty `Vec` if no tree section is mapped.
+    /// out-of-range pagination); `limit == 0` means no cap, as everywhere in
+    /// the query API. Empty `Vec` if no tree section is mapped.
     pub fn children(&self, idx: usize, offset: usize, limit: usize) -> Vec<ChildRef> {
         let Some(tree) = self.tree else {
             return Vec::new();
         };
         let children = tree.groups.as_slice()[idx].children.as_slice();
         let start = offset.min(children.len());
-        let end = (offset + limit).min(children.len());
+        let end = offset
+            .saturating_add(crate::filter::effective_take(limit))
+            .min(children.len());
         children[start..end].iter().map(owned_child_ref).collect()
     }
 }
@@ -682,8 +685,12 @@ mod tests {
                 }
             }
         }
-        // Pagination clamps rather than panicking.
+        // Pagination clamps rather than panicking, and a 0 limit is no cap.
         assert_eq!(view.children(0, 100, 5).len(), 0);
+        let all = view.children(0, 0, usize::MAX).len();
+        assert!(all > 1, "fixture group 0 needs several children");
+        assert_eq!(view.children(0, 0, 0).len(), all);
+        assert_eq!(view.children(0, 1, 0).len(), all - 1);
 
         let _ = std::fs::remove_file(&esm_path);
         // `esm_cache/` is a directory SHARED by every ESM in this parent

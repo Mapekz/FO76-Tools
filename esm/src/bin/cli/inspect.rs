@@ -76,7 +76,21 @@ pub(crate) fn cmd_tree(
             }),
         )?
     } else {
-        backend.run(file, Op::ListGroups(esm::ops::NoArgs {}))?
+        // `ListGroups` has no pagination of its own; page its rows here so
+        // `--offset`/`--limit` bound this listing like every other.
+        let mut groups = backend.run(file, Op::ListGroups(esm::ops::NoArgs {}))?;
+        if let Some(rows) = groups.as_array_mut() {
+            let total = rows.len();
+            let take = if limit == 0 { usize::MAX } else { limit };
+            *rows = rows.drain(..).skip(offset).take(take).collect();
+            if offset.saturating_add(rows.len()) < total {
+                eprintln!(
+                    "note: output capped at {} of {total} groups; use --limit all to show all",
+                    rows.len()
+                );
+            }
+        }
+        groups
     };
     convert_tree_json(&mut v, base);
     print_json(&v, pretty);

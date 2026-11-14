@@ -62,10 +62,12 @@ subcommand.
   fine when the raw FormID values are what you actually want.
 - `list` never returns display names — use `search --in name` or `get`.
   `search` needs `"*"` to match all; `""` matches nothing.
-- `all` means "no cap" on every cap flag: `--limit all` (`list`/`tree`/
-  `search`/`refs`), `refs --depth all`, `coverage --sample all`, and
-  `--ref-limit all` (`walk`/`chase`); those flags reject 0. (`walk --depth 0`
-  is different: it means "just the root".) `list`/`search`/`refs` print
+- `all` means "no cap" on the row and record caps — `--limit all`
+  (`list`/`tree`/`search`/`refs`), `coverage --sample all`, `--ref-limit all`
+  (`walk`/`chase`) — and on `refs --depth all`; those flags reject 0. The
+  other hop controls stay numeric: `walk --depth` (0 = just the root),
+  `chase --depth` (1–8) and `refs --max-hops` (default 12) take no `all`.
+  `list`/`search`/`refs` print
   `note: output capped at N of M results; use --limit all to show all` to
   **stderr**, never stdout, so `--json` stays parseable when capped. `refs
   --json` is the whole walk result — `rows` plus `total`, `capped` and the
