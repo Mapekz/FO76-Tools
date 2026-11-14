@@ -1,44 +1,13 @@
 name: Release
 
-# `paths` gates the rolling channel only: GitHub does not evaluate path filters
-# for tag pushes, so `tags: ['v*']` fires unconditionally and a `v*` tag whose
-# commit touched no source still publishes.
-#
-# The path list is "anything that changes a shipped binary", which is wider than
-# src/: schema/ (fo76.json, fo76.ctda.json, hardcoded_fo76.json) and
-# skills/esm-cli/SKILL.md are include_str!-embedded, and build.rs digests schema/.
-# SKILL.md is markdown but load-bearing — do not add a blanket *.md exclusion.
+# Called only by ci.yml's `release` job, after the full suite passes. ci.yml
+# owns the triggers, the shipped-path gate and the concurrency group.
 on:
-  push:
-    branches: [main]
-    tags: ['v*']
-    paths:
-      - 'esm/src/**'
-      - 'esm/schema/**'
-      - 'esm/build.rs'
-      - 'esm/skills/**'
-      - 'esm/Cargo.toml'
-      - 'ba2/src/**'
-      - 'ba2/Cargo.toml'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
-      - '.cargo/config.toml'
-      - 'rust-toolchain.toml'
-      - '.github/workflows/release.yml'
-  workflow_dispatch:
+  workflow_call:
 
 # Least privilege: only `publish` escalates to write.
 permissions:
   contents: read
-
-# One group per ref. Every push to main shares `release-refs/heads/main`, so a
-# newer push cancels an older in-flight run — two runs must never interleave
-# force-moving the `latest` tag and clobbering its assets. Each tag push gets
-# its own unique group AND evaluates cancel-in-progress to false, so a real
-# release build can never be cancelled.
-concurrency:
-  group: release-${{ github.ref }}
-  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
 # windows-latest defaults to pwsh; force bash everywhere so the packaging steps
 # are one code path (Git Bash is on the image).
@@ -89,14 +58,10 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           echo "**${channel}** -> tag \`${tag}\`, version \`${version}\`" >> "$GITHUB_STEP_SUMMARY"
 
-  # ── The full CI suite gates every publish ─────────────────────────────────
-  ci:
-    uses: ./.github/workflows/ci.yml
-
   # ── Per-platform build + smoke + archive ──────────────────────────────────
   build:
     name: build (${{ matrix.target }})
-    needs: [meta, ci]
+    needs: [meta]
     runs-on: ${{ matrix.os }}
     strategy:
       # Surface both platforms' errors in one run; `publish` still needs the
@@ -280,6 +245,15 @@ jobs:
         run: |
           set -euo pipefail
           if [[ "$CHANNEL" == "rolling" ]]; then
+            # Checks for an older push can finish after a newer one's, so only
+            # the current tip of main may move `latest`. The newer run gates on
+            # a diff against `latest`, so skipping here loses no change.
+            tip="$(gh api "repos/${GH_REPO}/git/ref/heads/main" --jq .object.sha)"
+            if [[ "$tip" != "$GITHUB_SHA" ]]; then
+              echo "superseded: main is at ${tip}; not publishing ${GITHUB_SHA}" | tee -a "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+
             # Force-move (or create) the `latest` tag via the git-refs API rather
             # than `git push -f`: no checkout is needed and a shallow clone can
             # have its tag push rejected with "shallow update not allowed".
