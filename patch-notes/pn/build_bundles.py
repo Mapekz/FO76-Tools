@@ -721,9 +721,26 @@ def attach_context(
 # --------------------------------------------------------------------------
 
 
+def refs_depth_arg(text: str) -> int:
+    """argparse type for `--refs-depth`: a hop count of at least 1. The esm
+    wire rejects depth 0, and `gather_reverse_edges` skips a failed lookup,
+    so a 0 would silently drop every ordinary record's reverse edges."""
+    try:
+        depth = int(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"invalid depth {text!r}: expected an integer >= 1") from None
+    if depth < 1:
+        raise argparse.ArgumentTypeError(f"invalid depth {depth}: expected an integer >= 1")
+    return depth
+
+
 def resolve_settings(overrides=None):
     """DEFAULT_SETTINGS with any CLI-flag overrides applied."""
-    return {**DEFAULT_SETTINGS, **(overrides or {})}
+    settings = {**DEFAULT_SETTINGS, **(overrides or {})}
+    refs_depth = cast(int, settings["refs_depth"])
+    if refs_depth < 1:
+        raise ValueError(f"refs_depth must be >= 1, got {refs_depth}")
+    return settings
 
 
 def _bundle_title(anchor_rec, anchor_fid):
@@ -889,7 +906,7 @@ def build_arg_parser():
     ap.add_argument("--new-esm", required=True, help="Path to the NEW .esm.")
     ap.add_argument("--old-esm", required=True, help="Path to the OLD .esm.")
     ap.add_argument("--out", default="bundles.json", help="Output path (default: bundles.json).")
-    ap.add_argument("--refs-depth", type=int, default=None, help="Override base reverse-ref BFS depth.")
+    ap.add_argument("--refs-depth", type=refs_depth_arg, default=None, help="Override base reverse-ref BFS depth (>= 1).")
     ap.add_argument("--hub-degree", type=int, default=None, help="Override the hub-degree threshold.")
     ap.add_argument("--max-members", type=int, default=None, help="Override the oversized-split threshold.")
     ap.add_argument("--esm-bin", default=None, help="Path to the esm CLI binary (live mode only).")

@@ -102,7 +102,8 @@ impl<'de> Deserialize<'de> for RefDepth {
             fn visit_u64<E: serde::de::Error>(self, v: u64) -> Result<RefDepth, E> {
                 match usize::try_from(v) {
                     Ok(0) => Err(E::custom(format!(
-                        "depth 0 is no longer accepted; use \"{NO_CAP}\" for an unbounded walk"
+                        "depth 0 is no longer accepted; use a hop count of 1 or more \
+                         (a referenced_by walk also takes \"{NO_CAP}\" for no cap)"
                     ))),
                     Ok(hops) => Ok(RefDepth::Hops(hops)),
                     Err(_) => Err(E::custom(format!("depth {v} is out of range"))),

@@ -33,6 +33,7 @@ FakeGateway and the checked-in fixtures.
 
 from __future__ import annotations
 
+import argparse
 import json
 import tempfile
 import unittest
@@ -483,6 +484,16 @@ class TestSettingsPrecedence(unittest.TestCase):
 
     def test_resolve_settings_without_overrides_uses_defaults(self):
         self.assertEqual(bb.resolve_settings(), bb.DEFAULT_SETTINGS)
+
+    def test_refs_depth_below_one_is_rejected(self):
+        # The esm wire rejects depth 0, and a failed refs lookup is skipped,
+        # so a 0 would yield a "successful" run with missing edges.
+        with self.assertRaises(ValueError):
+            bb.resolve_settings({"refs_depth": 0})
+        for bad in ("0", "-1", "x"):
+            with self.assertRaises(argparse.ArgumentTypeError):
+                bb.refs_depth_arg(bad)
+        self.assertEqual(bb.refs_depth_arg("3"), 3)
 
 
 # ---------------------------------------------------------------------------

@@ -1006,7 +1006,7 @@ fn ref_depth_wire_form() {
     let read = |s: &str| serde_json::from_str::<RefDepth>(s);
     assert_eq!(read(r#""all""#).unwrap(), RefDepth::Unbounded);
     let zero = read("0").unwrap_err().to_string();
-    assert!(zero.contains(r#"use "all""#), "{zero}");
+    assert!(zero.contains("no longer accepted"), "{zero}");
     assert_eq!(read("2").unwrap(), RefDepth::Hops(2));
     for bad in [r#""ALL""#, "-1", "1.5"] {
         assert!(read(bad).is_err(), "{bad} must be rejected");

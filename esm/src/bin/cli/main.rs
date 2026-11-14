@@ -533,12 +533,13 @@ impl From<BodiesArg> for BodyDetail {
 /// "no cap" has one spelling on every flag.
 fn parse_cap(s: &str) -> Result<usize, String> {
     let all = esm::ops::NO_CAP;
-    match s {
-        _ if s == all => Ok(0),
-        "0" => Err(format!("0 is no longer accepted; use `{all}` for no cap")),
-        _ => s
-            .parse()
-            .map_err(|_| format!("expected a positive count or `{all}`")),
+    if s == all {
+        return Ok(0);
+    }
+    match s.parse::<usize>() {
+        Ok(0) => Err(format!("0 is no longer accepted; use `{all}` for no cap")),
+        Ok(v) => Ok(v),
+        Err(_) => Err(format!("expected a positive count or `{all}`")),
     }
 }
 
@@ -1072,7 +1073,11 @@ mod tests {
     fn cap_flags_accept_all_and_reject_zero() {
         assert_eq!(parse_cap("all"), Ok(0));
         assert_eq!(parse_cap("25"), Ok(25));
-        assert!(parse_cap("0").unwrap_err().contains("use `all`"));
+        for zero in ["0", "00", "+0"] {
+            assert!(parse_cap(zero).unwrap_err().contains("use `all`"), "{zero}");
+            assert!(parse_hops(zero).is_err(), "{zero}");
+            assert!(parse_ref_depth(zero).is_err(), "{zero}");
+        }
         assert!(parse_cap("ALL").is_err());
         assert!(parse_cap("-1").is_err());
         assert!(parse_hops("0").is_err());

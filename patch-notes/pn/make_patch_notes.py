@@ -368,8 +368,8 @@ def build_arg_parser():
     ap.add_argument("--exclude-type", default=DEFAULT_EXCLUDE_TYPE, metavar="LIST",
                     help=f"Comma-delimited record-type signatures to omit entirely "
                          f"(default: {DEFAULT_EXCLUDE_TYPE}). Pass --exclude-type '' to disable.")
-    ap.add_argument("--refs-depth", type=int, default=None, metavar="N",
-                    help="Override the bundles stage's base reverse-ref BFS depth")
+    ap.add_argument("--refs-depth", type=bb.refs_depth_arg, default=None, metavar="N",
+                    help="Override the bundles stage's base reverse-ref BFS depth (>= 1)")
     ap.add_argument("--skip-bundles", action="store_true",
                     help="Skip bundles.json (and, necessarily, lints.json)")
     ap.add_argument("--skip-lints", action="store_true",
