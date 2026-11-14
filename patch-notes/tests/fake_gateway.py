@@ -71,8 +71,8 @@ class FakeGateway:
     what `Database::referenced_by` returns for one node in the real backend.
     `FakeGateway.refs()` performs the same breadth-first walk that
     `esm/src/refs/mod.rs::referenced_by_walk` performs in-process: expanding
-    one hop at a time up to the requested depth (`depth=0` = unbounded, no
-    fixed hop cap, mirroring `RefList.effective_depth == None`), visiting
+    one hop at a time up to the requested depth (`depth="all"` = unbounded,
+    no fixed hop cap, mirroring `RefList.effective_depth == None`), visiting
     each node at most once (cycle-safe), and recording the intermediate-node
     `path` and hop `depth` exactly as the real `RefRow`/`RefPathNode`
     structs do, plus the same `RefList` walk-stats fields
@@ -144,7 +144,7 @@ class FakeGateway:
         esm: str,
         formid: formids.FormIdLike,
         *,
-        depth: int = 2,
+        depth: int | str = 2,
         limit: int = 0,
         type_filter: str | None = None,
         paths: bool = False,
@@ -248,17 +248,21 @@ class FakeGateway:
         self,
         target: int,
         *,
-        depth: int,
+        depth: int | str,
         limit: int,
         type_filter: str | None = None,
         include_paths: bool = False,
     ) -> dict:
         # Mirror esm/src/refs/mod.rs::referenced_by_walk's clamp exactly:
-        # `depth == 0` requests an UNBOUNDED walk (max_depth = None, no fixed
-        # hop cap, RefList.effective_depth = None) -- NOT "treated as depth
-        # 1". Any other value clamps to `[1, DEFAULT_MAX_DEPTH]`.
-        requested_depth = depth
-        max_depth: int | None = None if depth == 0 else max(1, min(depth, DEFAULT_MAX_DEPTH))
+        # `depth == "all"` (or the deprecated 0) requests an UNBOUNDED walk
+        # (max_depth = None, no fixed hop cap, RefList.effective_depth =
+        # None, requested_depth = 0) -- NOT "treated as depth 1". Any other
+        # value clamps to `[1, DEFAULT_MAX_DEPTH]`.
+        unbounded = depth == "all" or depth == 0
+        if isinstance(depth, str) and not unbounded:
+            raise ValueError(f"invalid depth {depth!r}: expected a hop count or 'all'")
+        requested_depth = 0 if unbounded else depth
+        max_depth: int | None = None if unbounded else max(1, min(int(depth), DEFAULT_MAX_DEPTH))
         effective_depth = max_depth
         target_hex = formids.display(target)
         type_filter_upper = type_filter.upper() if type_filter else None

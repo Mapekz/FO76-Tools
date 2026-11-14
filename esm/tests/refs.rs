@@ -391,16 +391,16 @@ fn recursive_refs_depth6_reaches_all_hops() {
     let _ = std::fs::remove_file(&path);
 }
 
-/// depth=0 requests an unbounded walk — it must reach exactly as deep as the
-/// full chain, not clamp to 1 or to DEFAULT_MAX_DEPTH.
+/// An unbounded walk must reach exactly as deep as the full chain, not clamp
+/// to 1 or to DEFAULT_MAX_DEPTH.
 #[test]
-fn recursive_refs_depth0_is_unbounded() {
+fn recursive_refs_unbounded_reaches_full_chain() {
     let (path, db) = open_chain_db();
 
     let list = referenced_by_enriched(
         &db,
         FormId(1),
-        esm::ops::RefDepth::from_hops(0),
+        esm::ops::RefDepth::Unbounded,
         0,
         None,
         false,
@@ -410,7 +410,7 @@ fn recursive_refs_depth0_is_unbounded() {
     assert_eq!(
         list.rows.len(),
         3,
-        "depth=0 (unbounded) must reach LVLI(2)+LVLI(3)+CONT(4), same as depth=6"
+        "an unbounded walk must reach LVLI(2)+LVLI(3)+CONT(4), same as depth=6"
     );
     let ids: Vec<_> = list.rows.iter().map(|r| r.form_id.as_str()).collect();
     assert!(ids.contains(&FormId(4).display().as_str()));
@@ -2092,6 +2092,35 @@ fn carrier_paths_leave_depth_two_rows_unchanged() {
     assert!(
         !paths.is_empty() && paths.iter().all(|p| !p.contains("Entry Point")),
         "a depth-2 row's paths point at its carrier reference: {paths:?}"
+    );
+
+    let _ = std::fs::remove_file(&path);
+}
+
+/// A wire op with `"depth": "all"` runs unbounded, the same walk the
+/// deprecated `"depth": 0` still requests.
+#[test]
+fn wire_depth_all_runs_unbounded() {
+    let (path, db) = open_chain_db();
+
+    let walk = |depth: serde_json::Value| -> RefList {
+        let op: Op = serde_json::from_value(serde_json::json!({
+            "op": "referenced_by",
+            "sel": {"kind": "form_id", "value": 1},
+            "limit": 0,
+            "depth": depth,
+        }))
+        .expect("op");
+        serde_json::from_value(run(&db, &op).expect("run")).expect("RefList")
+    };
+    let all = walk(serde_json::json!("all"));
+    assert_eq!(all.rows.len(), 3, "{all:?}");
+    assert_eq!(all.effective_depth, None);
+    assert_eq!(all.requested_depth, 0);
+    let zero = walk(serde_json::json!(0));
+    assert_eq!(
+        serde_json::to_value(&zero).unwrap(),
+        serde_json::to_value(&all).unwrap()
     );
 
     let _ = std::fs::remove_file(&path);

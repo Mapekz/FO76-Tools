@@ -109,7 +109,7 @@ pub(crate) fn print_record_rows(
     }
     if capped {
         eprintln!(
-            "note: output capped at {} results; use --limit 0 to show all",
+            "note: output capped at {} results; use --limit all to show all",
             limit
         );
     }

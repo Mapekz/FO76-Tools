@@ -36,11 +36,16 @@ use std::path::PathBuf;
 /// Default maximum recursion depth for the reverse-reference walk.
 pub const DEFAULT_MAX_DEPTH: usize = 8;
 
-/// How far a reverse-reference walk goes. On the wire it is a hop count,
-/// with 0 meaning unbounded.
+/// The word every surface uses for "no cap": `--depth all`, `--limit all`,
+/// and `"depth": "all"` on the wire.
+pub const NO_CAP: &str = "all";
+
+/// How far a reverse-reference walk goes. On the wire it is a hop count, or
+/// `"all"` for an unbounded walk. A hop count of 0 is a deprecated spelling
+/// of `"all"`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(test, derive(ts_rs::TS))]
-#[cfg_attr(test, ts(export, type = "number"))]
+#[cfg_attr(test, ts(export, type = "number | \"all\""))]
 pub enum RefDepth {
     /// Up to this many hops (as asked; walks clamp it to
     /// `1..=`[`DEFAULT_MAX_DEPTH`], so 0 is one hop).
@@ -53,6 +58,7 @@ impl RefDepth {
     /// Direct references only.
     pub const DIRECT: RefDepth = RefDepth::Hops(1);
 
+    /// `hops`, with the deprecated 0 meaning [`RefDepth::Unbounded`].
     pub fn from_hops(hops: usize) -> RefDepth {
         if hops == 0 {
             RefDepth::Unbounded
@@ -87,13 +93,40 @@ impl Default for RefDepth {
 
 impl Serialize for RefDepth {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        s.serialize_u64(self.requested() as u64)
+        match self {
+            RefDepth::Hops(_) => s.serialize_u64(self.requested() as u64),
+            RefDepth::Unbounded => s.serialize_str(NO_CAP),
+        }
     }
 }
 
 impl<'de> Deserialize<'de> for RefDepth {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        usize::deserialize(d).map(RefDepth::from_hops)
+        struct DepthVisitor;
+        impl serde::de::Visitor<'_> for DepthVisitor {
+            type Value = RefDepth;
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                write!(f, "a hop count or \"{NO_CAP}\"")
+            }
+            fn visit_u64<E: serde::de::Error>(self, v: u64) -> Result<RefDepth, E> {
+                usize::try_from(v)
+                    .map(RefDepth::from_hops)
+                    .map_err(|_| E::custom(format!("depth {v} is out of range")))
+            }
+            fn visit_i64<E: serde::de::Error>(self, v: i64) -> Result<RefDepth, E> {
+                u64::try_from(v)
+                    .map_err(|_| E::custom(format!("depth {v} is negative")))
+                    .and_then(|v| self.visit_u64(v))
+            }
+            fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<RefDepth, E> {
+                if v == NO_CAP {
+                    Ok(RefDepth::Unbounded)
+                } else {
+                    Err(E::invalid_value(serde::de::Unexpected::Str(v), &self))
+                }
+            }
+        }
+        d.deserialize_any(DepthVisitor)
     }
 }
 

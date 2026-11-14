@@ -90,7 +90,8 @@ esm [--esm <ESM-or-folder>] <subcommand> [options] [...]
 
 A bare positional `<target>` auto-detects FormID (`0x`-prefixed or bare hex — see `--decimal`
 above for the decimal reading) vs EditorID; explicit `--formid`/`--edid` skip the ambiguity.
-`--limit 0` means unlimited on `list`/`search`/`refs`.
+`all` means "no cap" on every cap flag (`--limit all`, `refs --depth all`, `coverage --sample all`,
+`--ref-limit all`).
 
 For full per-flag depth, bulk-operation patterns, `refs` selector rules, and how to read a
 `walk`/`chase` digest, run `esm skill` or see [`skills/esm-cli/SKILL.md`](skills/esm-cli/SKILL.md)

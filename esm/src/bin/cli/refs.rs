@@ -64,7 +64,7 @@ pub(crate) fn cmd_refs(
         // attached to the finished RefList (as `capped`/`depth_capped` are)
         // would only print after the wait is already over.
         eprintln!(
-            "warning: --depth 0 is unbounded and can take minutes on hub-heavy graphs \
+            "warning: --depth all is unbounded and can take minutes on hub-heavy graphs \
              (--type/--limit don't reduce the cost); Ctrl-C to abort."
         );
     }
@@ -273,11 +273,11 @@ fn print_refs(ref_list: &RefList, sort: esm::ops::RefSort, json: bool, pretty: b
         };
         let escape = if d < esm::ops::DEFAULT_MAX_DEPTH {
             format!(
-                "raise --depth (up to {}) or pass --depth 0 for an unbounded walk",
+                "raise --depth (up to {}) or pass --depth all for an unbounded walk",
                 esm::ops::DEFAULT_MAX_DEPTH
             )
         } else {
-            "pass --depth 0 for an unbounded walk".to_string()
+            "pass --depth all for an unbounded walk".to_string()
         };
         eprintln!(
             "note: walk stopped at max depth {d} with {} frontier node(s) unexpanded; \
@@ -325,7 +325,7 @@ fn print_refs(ref_list: &RefList, sort: esm::ops::RefSort, json: bool, pretty: b
                 ref_list.shown_max_depth
             ));
         }
-        note.push_str("; use --limit 0 to show all, or --sort depth for a breadth-first prefix");
+        note.push_str("; use --limit all to show all, or --sort depth for a breadth-first prefix");
         eprintln!("{note}");
     }
 }

@@ -28,7 +28,7 @@ import os
 import shutil
 import subprocess
 from pathlib import Path
-from typing import IO, Any, Iterable, Mapping, Sequence
+from typing import IO, Any, Iterable, Literal, Mapping, Sequence
 
 from pn import formids
 
@@ -321,19 +321,20 @@ class EsmGateway:
         esm: str,
         formid: formids.FormIdLike,
         *,
-        depth: int = 2,
+        depth: int | Literal["all"] = 2,
         limit: int = 0,
         type_filter: str | None = None,
         paths: bool = False,
     ) -> dict:
         """`Op::ReferencedBy { sel: FormId, limit, depth, type_filter, paths }`.
-        `limit=0` means unlimited; `depth=0` requests an UNBOUNDED walk (no
-        fixed hop cap), any other value clamps on the Rust side to `[1,
-        DEFAULT_MAX_DEPTH]`. Returns the `RefList` dict: `{target, rows,
+        `limit=0` means unlimited; `depth="all"` requests an UNBOUNDED walk
+        (no fixed hop cap; `depth=0` is its deprecated spelling), any other
+        value clamps on the Rust side to `[1, DEFAULT_MAX_DEPTH]`. Returns the `RefList` dict: `{target, rows,
         total, capped, requested_depth, effective_depth, depth_capped,
         frontier_remaining, per_depth_totals, shown_max_depth}` (see
         `RefList` in esm/src/ops/refs.rs for each field's exact meaning;
-        `effective_depth` is `None` when `requested_depth == 0`).
+        `effective_depth` is `None` for an unbounded walk, which reports
+        `requested_depth == 0`).
         `carrier_total`/`tag_total` are also part of the wire struct but only
         populated for entry-point/carrier-seeded walks, which this
         single-target method never produces -- the Rust struct's own

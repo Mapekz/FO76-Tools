@@ -234,7 +234,7 @@ Batch only records needing investigation through
 `just heavy esm python3 patch-notes/cli.py extract "$OUT" <FORMID> [<FORMID>...]`; it reloads the
 full JSON, so use the guard and avoid repeated small calls. Resolve changed
 relatives via bundle context members, bulk `get` (e.g. a COBJ's
-Created Object or reward entries), and `refs --paths --limit 0` on both OLD/NEW. Follow indirect
+Created Object or reward entries), and `refs --paths --limit all` on both OLD/NEW. Follow indirect
 mod-collection/reward chains; do not require the item root itself to be in the diff. Changed
 records may have `fields: null`, and `refs_out` is not a complete item graph. Unresolved
 associations stay explicit. Apply Guardrails to namespace/deprecation transitions regardless

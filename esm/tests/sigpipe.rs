@@ -1,6 +1,6 @@
 //! The CLI must not panic (or surface an `anyhow`-wrapped `Broken pipe (os
 //! error 32)`) when its stdout pipe is closed on the reader's side, e.g. `esm
-//! list --type WEAP --limit 0 | head -c 200`. Conventional CLI behavior
+//! list --type WEAP --limit all | head -c 200`. Conventional CLI behavior
 //! (`cat`/`rg`/`jq`) is to die silently via SIGPIPE;
 //! `src/bin/cli/main.rs::reset_sigpipe_to_default` restores that default.
 //!

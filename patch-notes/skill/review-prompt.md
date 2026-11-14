@@ -26,7 +26,7 @@ directory. The only output you write under `{OUT}` is the review file named at t
   and the same with `--esm "{OLD_ESM}"` for pre-patch values.
 - Tracing tools, read-only (use OLD/NEW explicitly):
   `just heavy esm python3 patch-notes/cli.py extract {OUT} <FORMID> [<FORMID>...]`,
-  `target/release/esm --esm "{NEW_ESM}" refs <id> --type <SIG> --paths --limit 0 --pretty`,
+  `target/release/esm --esm "{NEW_ESM}" refs <id> --type <SIG> --paths --limit all --pretty`,
   `target/release/esm --esm "{NEW_ESM}" chase <OMOD_OR_PERK_OR_SPEL_OR_ENCH_OR_ALCH>`.
   Use forward `get` for recipe outputs/reward entries and reverse `refs` for grant/source
   chains, including mod collections. Empty direct refs alone do not prove content cut.

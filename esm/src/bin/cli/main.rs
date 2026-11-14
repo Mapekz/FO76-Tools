@@ -187,8 +187,8 @@ enum Commands {
         /// Record type to list (4-character signature, e.g. `WEAP`).
         #[arg(long)]
         r#type: String,
-        /// Maximum rows to print (0 = all).
-        #[arg(long, default_value_t = 50)]
+        /// Maximum rows to print (`all` = no cap).
+        #[arg(long, default_value_t = 50, value_parser = parse_cap)]
         limit: usize,
         /// Print machine-readable JSON (compact unless --pretty).
         #[arg(long)]
@@ -209,8 +209,8 @@ enum Commands {
         /// Skip this many rows before printing.
         #[arg(long, default_value_t = 0)]
         offset: usize,
-        /// Maximum rows to print (0 = all).
-        #[arg(long, default_value_t = 50)]
+        /// Maximum rows to print (`all` = no cap).
+        #[arg(long, default_value_t = 50, value_parser = parse_cap)]
         limit: usize,
         /// Indent JSON output.
         #[arg(long)]
@@ -221,8 +221,8 @@ enum Commands {
         /// Only records of this 4-character type (e.g. `WEAP`).
         #[arg(long = "type")]
         record_type: Option<String>,
-        /// Decode at most this many records per type (0 = all).
-        #[arg(long, default_value_t = 0)]
+        /// Decode at most this many records per type (`all` = no cap).
+        #[arg(long, default_value = "all", value_parser = parse_cap)]
         sample: usize,
         /// Print machine-readable JSON (compact unless --pretty).
         #[arg(long)]
@@ -284,19 +284,20 @@ enum Commands {
         /// only the one chain (if any).
         #[arg(long, conflicts_with_all = ["entry_point", "omod_property", "limit", "depth", "record_type", "sort"])]
         to: Option<String>,
-        /// Combined hop-count ceiling for --to's bidirectional search
-        /// (default 12). Only meaningful with --to.
-        #[arg(long, default_value_t = 0, requires = "to")]
+        /// Combined hop-count ceiling for --to's bidirectional search. Only
+        /// meaningful with --to.
+        #[arg(long, default_value_t = esm::refs::DEFAULT_MAX_PATH_HOPS, requires = "to")]
         max_hops: usize,
-        /// Maximum rows to print (0 = all).
-        #[arg(long, default_value_t = 100)]
+        /// Maximum rows to print (`all` = no cap).
+        #[arg(long, default_value_t = 100, value_parser = parse_cap)]
         limit: usize,
-        /// Reverse-reference walk depth (1 = direct refs only, up to 8;
-        /// 0 = unbounded — no fixed hop cap. An unbounded walk over a
-        /// hub-heavy graph like CELL/REFR can return hundreds of thousands
-        /// of rows; combine with --limit 0 and a --type filter.
+        /// Reverse-reference walk depth: 1 = direct refs only, up to 8, or
+        /// `all` for no hop cap. An unbounded walk over a hub-heavy graph
+        /// like CELL/REFR can return hundreds of thousands of rows; combine
+        /// it with --limit all and a --type filter. (0 is a deprecated
+        /// spelling of `all`.)
         #[arg(long, default_value = "1", value_parser = parse_ref_depth)]
-        depth: esm::ops::RefDepth,
+        depth: RefDepthArg,
         /// Narrow rows to referencing records of this 4-character type
         /// (e.g. `OMOD`); case-insensitive. Applied inside the op, so `--limit`/
         /// `--depth` interact correctly with the filter.
@@ -332,8 +333,8 @@ enum Commands {
         /// Match against EditorIDs, display names, or both.
         #[arg(long = "in", value_enum, default_value = "both")]
         search_in: SearchInArg,
-        /// Maximum rows to print (0 = all).
-        #[arg(long, default_value_t = 100)]
+        /// Maximum rows to print (`all` = no cap).
+        #[arg(long, default_value_t = 100, value_parser = parse_cap)]
         limit: usize,
         /// Print machine-readable JSON (compact unless --pretty).
         #[arg(long)]
@@ -354,9 +355,9 @@ enum Commands {
         /// (OMOD selectors only — ignored for PERK/SPEL/ALCH/ENCH).
         #[arg(long, default_value = "1", value_parser = parse_chase_depth)]
         depth: esm::ops::RefDepth,
-        /// Cap on refs rows fetched per record-type filter
+        /// Cap on refs rows fetched per record-type filter, `all` = no cap
         /// (OMOD selectors only — ignored for PERK/SPEL/ALCH/ENCH).
-        #[arg(long = "ref-limit", default_value_t = esm::chase::DEFAULT_REF_LIMIT)]
+        #[arg(long = "ref-limit", default_value_t = esm::chase::DEFAULT_REF_LIMIT, value_parser = parse_cap)]
         ref_limit: usize,
     },
     /// Digest a record and the chain it references, for reading.
@@ -374,8 +375,8 @@ enum Commands {
         #[arg(long)]
         depth: Option<usize>,
         /// Cap on refs rows fetched per record-type filter for an OMOD
-        /// root's keyword/AVIF mechanism consumer lookups.
-        #[arg(long = "ref-limit", default_value_t = esm::chase::DEFAULT_REF_LIMIT)]
+        /// root's keyword/AVIF mechanism consumer lookups (`all` = no cap).
+        #[arg(long = "ref-limit", default_value_t = esm::chase::DEFAULT_REF_LIMIT, value_parser = parse_cap)]
         ref_limit: usize,
         /// Player level assumed by an LVLI root's drop-odds digest (Curve
         /// Table evaluation, Minimum Level filtering). Also drives Curve
@@ -528,20 +529,52 @@ impl From<BodiesArg> for BodyDetail {
     }
 }
 
-/// Validates `refs --depth` against `[0, DEFAULT_MAX_DEPTH]` — `usize`
-/// doesn't get a ranged `clap::value_parser!`, so this rejects out-of-range
-/// values explicitly rather than clamping them silently.
-fn parse_ref_depth(s: &str) -> Result<esm::ops::RefDepth, String> {
-    let v: usize = s
-        .parse()
-        .map_err(|_| format!("invalid depth value '{s}'"))?;
-    if v > esm::ops::DEFAULT_MAX_DEPTH {
-        Err(format!(
-            "{v} is not in 0..={} (0 = unbounded)",
-            esm::ops::DEFAULT_MAX_DEPTH
-        ))
-    } else {
-        Ok(esm::ops::RefDepth::from_hops(v))
+/// A row or record cap: a count, or `all` for no cap (0 on the wire, where
+/// 0 means "no cap").
+fn parse_cap(s: &str) -> Result<usize, String> {
+    if s == esm::ops::NO_CAP {
+        return Ok(0);
+    }
+    s.parse().map_err(|_| {
+        format!(
+            "invalid value '{s}': expected a count or `{}`",
+            esm::ops::NO_CAP
+        )
+    })
+}
+
+/// `refs --depth` as given: the depth, and whether it used the deprecated
+/// `0` spelling of `all` (so the handler can warn).
+#[derive(Debug, Clone, Copy)]
+struct RefDepthArg {
+    depth: esm::ops::RefDepth,
+    deprecated_zero: bool,
+}
+
+/// Validates `refs --depth` against `1..=DEFAULT_MAX_DEPTH` or `all` —
+/// `usize` doesn't get a ranged `clap::value_parser!`, so this rejects
+/// out-of-range values explicitly rather than clamping them silently.
+fn parse_ref_depth(s: &str) -> Result<RefDepthArg, String> {
+    let max = esm::ops::DEFAULT_MAX_DEPTH;
+    let all = esm::ops::NO_CAP;
+    if s == all {
+        return Ok(RefDepthArg {
+            depth: esm::ops::RefDepth::Unbounded,
+            deprecated_zero: false,
+        });
+    }
+    match s.parse::<usize>() {
+        Ok(0) => Ok(RefDepthArg {
+            depth: esm::ops::RefDepth::Unbounded,
+            deprecated_zero: true,
+        }),
+        Ok(v) if v <= max => Ok(RefDepthArg {
+            depth: esm::ops::RefDepth::Hops(v),
+            deprecated_zero: false,
+        }),
+        _ => Err(format!(
+            "invalid depth '{s}': expected 1..={max} or `{all}`"
+        )),
     }
 }
 
@@ -937,6 +970,11 @@ fn dispatch_command(
                     options.formid_base,
                 )
             } else {
+                if depth.deprecated_zero {
+                    eprintln!(
+                        "warning: --depth 0 is deprecated; use --depth all for an unbounded walk"
+                    );
+                }
                 refs::cmd_refs(
                     backend,
                     esm,
@@ -946,7 +984,7 @@ fn dispatch_command(
                     entry_point,
                     omod_property,
                     limit,
-                    depth,
+                    depth.depth,
                     record_type,
                     paths,
                     sort.into(),
@@ -1043,6 +1081,44 @@ fn dispatch_command(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `all` spells "no cap" on every cap flag; counts pass through.
+    #[test]
+    fn cap_flags_accept_all() {
+        assert_eq!(parse_cap("all"), Ok(0));
+        assert_eq!(parse_cap("25"), Ok(25));
+        assert!(parse_cap("ALL").is_err());
+        assert!(parse_cap("-1").is_err());
+        for args in [
+            &["esm", "list", "--type", "WEAP", "--limit", "all"][..],
+            &["esm", "tree", "--limit", "all"],
+            &["esm", "search", "x", "--limit", "all"],
+            &["esm", "refs", "0x1", "--limit", "all", "--depth", "all"],
+            &["esm", "coverage", "--sample", "all"],
+            &["esm", "chase", "0x1", "--ref-limit", "all"],
+            &["esm", "walk", "0x1", "--ref-limit", "all"],
+        ] {
+            Cli::try_parse_from(args).unwrap_or_else(|e| panic!("{args:?}: {e}"));
+        }
+    }
+
+    /// `refs --depth` takes 1..=8 or `all`; 0 still means `all` but is
+    /// flagged so the handler warns.
+    #[test]
+    fn refs_depth_accepts_all_and_flags_zero() {
+        let all = parse_ref_depth("all").unwrap();
+        assert_eq!(all.depth, esm::ops::RefDepth::Unbounded);
+        assert!(!all.deprecated_zero);
+        let zero = parse_ref_depth("0").unwrap();
+        assert_eq!(zero.depth, esm::ops::RefDepth::Unbounded);
+        assert!(zero.deprecated_zero);
+        assert_eq!(
+            parse_ref_depth("8").unwrap().depth,
+            esm::ops::RefDepth::Hops(8)
+        );
+        assert!(parse_ref_depth("9").is_err());
+        assert!(parse_ref_depth("x").is_err());
+    }
 
     #[test]
     fn cli_parses_chase_and_walk() {

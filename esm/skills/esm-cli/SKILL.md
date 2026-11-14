@@ -62,8 +62,10 @@ subcommand.
   fine when the raw FormID values are what you actually want.
 - `list` never returns display names — use `search --in name` or `get`.
   `search` needs `"*"` to match all; `""` matches nothing.
-- `--limit 0` means unlimited on `list`/`search`/`refs`. All three print
-  `note: output capped at N of M results; use --limit 0 to show all` to
+- `all` means "no cap" on every cap flag: `--limit all` (`list`/`tree`/
+  `search`/`refs`), `refs --depth all`, `coverage --sample all`, and
+  `--ref-limit all` (`walk`/`chase`). `list`/`search`/`refs` print
+  `note: output capped at N of M results; use --limit all to show all` to
   **stderr**, never stdout, so `--json` stays parseable when capped. `refs
   --json` is the whole walk result — `rows` plus `total`, `capped` and the
   depth fields — not a bare row array.
@@ -76,8 +78,10 @@ subcommand.
 ## Reverse references (`refs`)
 
 - The default `--limit 100` truncates popular targets (see the stderr capped-
-  output note above) — pass `--limit 0` when you need everything. Raise
-  `--depth` to reach a target through an intermediary (e.g. a quest alias).
+  output note above) — pass `--limit all` when you need everything. Raise
+  `--depth` (up to 8) to reach a target through an intermediary (e.g. a
+  quest alias). `--depth all` removes the hop cap and can take minutes on
+  hub-heavy graphs; pair it with `--type` and `--limit all`.
 - `--entry-point`/`--ep` answers "what uses this hook?" — the reverse of
   reading a PERK's own Entry Point off `get`/`walk`. `esm refs --ep 'Mod
   Percent Blocked'` surfaces the Blocker perks and the Ogua Gauntlet/Defender's
@@ -100,7 +104,7 @@ subcommand.
   first discovered at depth ≥ 3 that was already reached shallower stays
   attributed only to the shallower carrier. At `--depth 2+` carriers are
   emitted *before* referencers, so a broad glob under `--limit 100` may show
-  only carrier rows — use `--limit 0` when you need the referencers.
+  only carrier rows — use `--limit all` when you need the referencers.
 - `--omod-property`/`--prop` answers "which OMODs declare this property?".
   Unlike `--ep` it is **flag-only**, never auto-detected from a bare positional
   — `Health` is also a real AVIF EditorID, and a bare `refs Health` must keep
@@ -111,7 +115,7 @@ subcommand.
   default `--depth 1` lists only the declaring OMODs; OMODs that merely
   *include* a declaring template (`Data.Includes[N].Mod`, `_PARENT_*`,
   `modcol_*`) inherit the property but appear only at `--depth 2`. `Keywords`
-  alone has ~7,500+ carriers, so pass `--limit 0` for the full list.
+  alone has ~7,500+ carriers, so pass `--limit all` for the full list.
 
 **Worked example** (`Data.Includes[]` inheritance needs no special flag —
 `--paths` already labels the edges that include a Speed-declaring OMOD):

@@ -62,7 +62,7 @@ fn list_by_type() {
 
 /// `limit: 0` must mean "no limit" for `list_by_type`, matching `search`'s and
 /// `filter_type_records`' existing limit=0-means-unlimited contract (and the
-/// CLI's own `--limit 0` help text) — an unconditional `.take(limit)` would
+/// CLI's `--limit all`, which sends 0) — an unconditional `.take(limit)` would
 /// silently return zero records instead of all of them.
 #[test]
 fn list_by_type_limit_zero_is_unlimited() {
@@ -993,18 +993,23 @@ fn walk_op_depth_is_optional_on_the_wire() {
     }
 }
 
-/// `RefDepth`'s wire form is the hop count with 0 meaning unbounded;
-/// `Hops(0)` walks one hop, so it goes out as 1.
+/// `RefDepth`'s wire form is the hop count, or `"all"` for unbounded;
+/// `Hops(0)` walks one hop, so it goes out as 1. A 0 on the way in is the
+/// deprecated spelling of `"all"`.
 #[test]
 fn ref_depth_wire_form() {
     use esm::ops::RefDepth;
     let wire = |d: RefDepth| serde_json::to_string(&d).unwrap();
-    assert_eq!(wire(RefDepth::Unbounded), "0");
+    assert_eq!(wire(RefDepth::Unbounded), r#""all""#);
     assert_eq!(wire(RefDepth::Hops(3)), "3");
     assert_eq!(wire(RefDepth::Hops(0)), "1");
-    let read = |s: &str| serde_json::from_str::<RefDepth>(s).unwrap();
-    assert_eq!(read("0"), RefDepth::Unbounded);
-    assert_eq!(read("2"), RefDepth::Hops(2));
+    let read = |s: &str| serde_json::from_str::<RefDepth>(s);
+    assert_eq!(read(r#""all""#).unwrap(), RefDepth::Unbounded);
+    assert_eq!(read("0").unwrap(), RefDepth::Unbounded);
+    assert_eq!(read("2").unwrap(), RefDepth::Hops(2));
+    for bad in [r#""ALL""#, "-1", "1.5"] {
+        assert!(read(bad).is_err(), "{bad} must be rejected");
+    }
 }
 
 /// A chase request never walks consumers unbounded, whatever surface sends
