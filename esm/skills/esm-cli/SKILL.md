@@ -408,12 +408,13 @@ owner/rank gates) — those surface as notes rather than being silently guessed.
   conditions pass, so an entry gated on `GetRandomPercent ≤ 10` genuinely is a
   flat 10%, and later entries are reachable only when every earlier gate fails
   (their true probability is the product of the preceding misses).
-- **`Max Value` is not an item count, and what it does is unconfirmed.** It caps either each
-  item's value (anything worth more never drops) or the list's total value (the first item to
-  drop uses it up). 0 is unset. A `Max Value` far below the list's item values is a data bug
-  either way: `RA_LL_Rewards_PublicEvents_Flux` (0x0086A8CE) has Max Value 3, and every flux in
-  it is worth 100. `walk` leaves a flat `Max Value` out of the odds and notes it on the list
-  ("Max Value N caps item value…"). The schema reads `Max Global` and `Max Curve Table` as that field's Global and
+- **`Max Value` has no effect on drops.** In game (2026-11-22), every bloodbug dropped both
+  Proboscis (worth 10) and Meat (18) from `LLD_Creature_Bloodbug` (0x00028667, Max Value 2), and
+  one also dropped ammo from the list's third entry, so it caps neither item value nor item
+  count. 0 is unset. A low `Max Value` is not a bug on its own: 287 lists
+  set one, most of them 1 on pick-one lists, and `LLS_Loot_Stimpak_All` (Max Value 1, Stimpak
+  worth 30) feeds first aid kits. `walk` leaves a flat `Max Value` out of the odds and notes it
+  on the list ("Max Value N has no effect on drops"). The schema reads `Max Global` and `Max Curve Table` as that field's Global and
   Curve sources, but the Globals are named `Container_MaxCount_*`, so whether they cap value or
   count is unconfirmed.
 - **A count cap (`Max Global`, `Max Curve Table` read at its tier Global, legacy `Max Count`)

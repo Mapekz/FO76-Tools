@@ -23,8 +23,9 @@
 //!   (see [`MAX_ITEMS`]) stops it at the first N entries that roll, in list
 //!   order: with a cap of 1 and an unconditioned first entry, that entry is
 //!   the only thing the list ever gives.
-//!   A flat `Max Value` is not that cap: it caps item value, per item or in
-//!   total (unconfirmed), and is noted rather than modeled.
+//!   A flat `Max Value` has no effect on drops: bloodbugs drop two items
+//!   worth 10 and 18, plus the list's later ammo entry, from a list with
+//!   Max Value 2 (in game, 2026-11-22). It is noted and the odds ignore it.
 //! - **`Use First Object That Matches All Conditions`**: ordered cascade —
 //!   the first entry whose gate passes wins; a lower entry's true odds are
 //!   its own gate times the product of every earlier entry's miss chance.
@@ -310,7 +311,7 @@ const QUANTITY: ScalarFields = ScalarFields {
 /// there does the cap change anything: entries roll in list order and the
 /// list stops once this many have rolled. A Curve Table is indexed by its
 /// tier Global (`Container_MaxCount_*` with `Container_MaxCount_*_Tier`).
-/// The flat `Max Value` is not a count (see [`max_value_note`]), though the
+/// The flat `Max Value` has no effect (see [`max_value_note`]), though the
 /// schema pairs it with these two.
 const MAX_ITEMS: ScalarFields = ScalarFields {
     flat: None,
@@ -424,20 +425,15 @@ fn entry_weight(chance_none: Option<f64>) -> f64 {
     chance_none.unwrap_or(0.0).max(0.0)
 }
 
-/// A note for a list's flat `Max Value`. It caps item value rather than the
-/// number of items: each item's value or the list's total, unconfirmed. So
-/// it is reported and left out of the odds.
+/// A note for a list's flat `Max Value`, which has no effect on drops (see
+/// the module docs), so it is reported and left out of the odds.
 fn max_value_note(fields: &Resolved) -> Option<DropNote> {
     let value = fields
         .get("Max Value")
         .and_then(Resolved::as_f64)
         .filter(|v| *v > 0.0)?;
     Some(DropNote::Unresolved {
-        reason: format!(
-            "Max Value {value} caps item value, not the item count: each item's value or the \
-             list's total, unconfirmed. Odds ignore it; an item worth more than {value} may \
-             never drop"
-        ),
+        reason: format!("Max Value {value} has no effect on drops; odds ignore it"),
     })
 }
 
@@ -1794,7 +1790,7 @@ mod tests {
         let second = row(&table, "Second");
         assert!((second.p_at_least_one - 1.0).abs() < 1e-9);
         assert!(second.notes.iter().any(
-            |n| matches!(n, DropNote::Unresolved { reason } if reason.starts_with("Max Value 1 caps item value"))
+            |n| matches!(n, DropNote::Unresolved { reason } if reason.starts_with("Max Value 1 has no effect"))
         ));
     }
 

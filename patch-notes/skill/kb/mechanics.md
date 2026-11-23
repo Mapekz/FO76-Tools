@@ -435,15 +435,16 @@ receivers retire.
 **Example:** LMG `MG42` (0x0007CAB1): `.45 Chamber` 0x00947F7D carries the old Standard .45 Receiver 0x0084CC9E's package.
 *verified 2026-10-26 vs 20261026*
 
-## A count-capped Use All list gives the first entries to roll; Max Value is not a count
+## A count-capped Use All list gives the first entries to roll; Max Value has no effect
 
 `Use All` gives every entry its own roll. A count cap (`Max Global` such as
 `Container_MaxCount_Single_Tier` 0x00308435 = 1, a `Max Curve Table` read at its tier Global, or
 legacy `Max Count`) stops the list once that many entries have rolled, so a cap of 1 gives the
 first entry to roll. Clearing `Use All` on such a list turns it into an even pick across every
-entry: a real change. A flat `Max Value` is not a count. It caps either each item's value or the list's total value
-(unconfirmed), so one far below the items' values is a bug either way; `walk` notes it and leaves
-it out of the odds. An
+entry: a real change. A flat `Max Value` has no effect on drops: in game (2026-11-22), every bloodbug dropped both
+Proboscis (worth 10) and Meat (18) from `LLD_Creature_Bloodbug` (Max Value 2), and one also dropped
+ammo from its third entry. A low `Max Value` is not a reportable bug; `walk` notes it and leaves it
+out of the odds. An
 entry ahead of the others shadows them only if it always yields, so check a sublist's list-level
 `Conditions`, list-level Chance None and level-tier Chance None before calling later entries
 unreachable. `walk` notes a list-level gate it can't compute and a leading entry that can be picked
