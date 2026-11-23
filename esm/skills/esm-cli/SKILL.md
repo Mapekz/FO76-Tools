@@ -576,9 +576,15 @@ effect arm as live, traverse both directions and refs-check the **ends**:
 
 - **A `Curve Table` sibling means the flat scalar next to it is NOT the
   effective value — the curve is.** This holds wherever the pair appears:
-  `Effects[].Effect.Effect Item Data.Magnitude` on ENCH/SPEL, `Value 2` on an
-  OMOD property, `Amount` on a `Damage Types[]` entry. Read the inlined
-  `curve` points, not the scalar.
+  `Effects[].Effect.Effect Item Data.Magnitude` on ENCH/SPEL, `Value 1` on a
+  `Float`/`Int` `MUL+ADD` OMOD property, `Amount` on a `Damage Types[]`
+  entry. Read the inlined `curve` points, not the scalar.
+  - **On an OMOD `MUL+ADD` row the curve replaces `Value 1`, the multiplier.**
+    `mod_AlienRifle_Receiver_Sniper` (0x0062FE8C) on 20261026 carried
+    `MaxRange` Value 1 `0.75` beside a flat curve of `1.1`: the live bonus was
+    +110%, and the 0.75 was never active. 20261113 dropped the curve for a
+    fixed Value 1 `1.0` — a nerf from +110% to +100%, not a buff from +75%.
+    Its `MinRange` row took a fixed `1.1`, the curve's own value: no change.
   - **`Magnitude: 0.0` with a `Curve Table` present does not mean "grants
     nothing."** It reads as an inert or cut effect and isn't — never call an
     effect dead or unaffected by a balance change on a zero magnitude without
